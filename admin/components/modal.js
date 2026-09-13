@@ -2,13 +2,15 @@
 // controller with { close, el }. A confirm() helper is built on top.
 import { esc } from "./format.js";
 
-export function openModal({ title = "", bodyHTML = "", footHTML = "", onMount } = {}) {
+// `className` adds modifier classes to the dialog itself — e.g. "modal-lg" for
+// content that needs more than the default 560px (the order detail view).
+export function openModal({ title = "", bodyHTML = "", footHTML = "", className = "", onMount } = {}) {
   const host = document.getElementById("modalHost");
 
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="modal ${esc(className)}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
       <div class="modal-head">
         <h3>${esc(title)}</h3>
         <button class="icon-btn" data-close aria-label="Close">✕</button>

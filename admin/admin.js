@@ -3,7 +3,7 @@
 // so views are refresh-safe and linkable (#products, #orders, #sales).
 import { renderOverview } from "./views/overview.js";
 import { renderProducts } from "./views/products.js";
-import { renderOrders } from "./views/orders.js";
+import { renderOrders, ORDER_ROUTES } from "./views/orders.js";
 import { renderSales } from "./views/sales.js";
 import { renderMessages_view } from "./views/messages.js";
 import { renderPromos } from "./views/promos.js";
@@ -23,7 +23,7 @@ const VIEWS = {
   "out-of-stock": { title: "Out of stock", render: root => renderProducts(root, { stockFilter: "out" }) },
   import:   { title: "Import products", render: renderImport },
   categories: { title: "Categories", render: renderCategories },
-  orders:   { title: "Orders", render: renderOrders },
+  // Orders are one route per status tab — see the spread below.
   promos:   { title: "Promo codes", render: renderPromos },
   "shipping-zones": { title: "Shipping zones", render: renderShippingZones },
   banners:  { title: "Homepage banners", render: renderBanners },
@@ -32,15 +32,27 @@ const VIEWS = {
   sales:    { title: "Sales performance", render: renderSales },
 };
 
+// One route per order status tab, so each status is linkable and survives a
+// refresh. They all light up the single "Orders" sidebar item (`nav`).
+for (const { route, status, title: viewTitle } of ORDER_ROUTES) {
+  VIEWS[route] = {
+    title: viewTitle,
+    nav: "orders",
+    render: r => renderOrders(r, { status }),
+  };
+}
+
 const root = document.getElementById("viewRoot");
 const title = document.getElementById("viewTitle");
 const nav = document.getElementById("adminNav");
 
 let current = "overview";
 
-function setActiveNav(view) {
+// `navKey` is the sidebar item to highlight — usually the route itself, but a
+// sub-route (e.g. an order status tab) points back at its parent nav item.
+function setActiveNav(navKey) {
   nav.querySelectorAll(".admin-nav-item").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.view === view);
+    btn.classList.toggle("active", btn.dataset.view === navKey);
   });
 }
 
@@ -48,7 +60,7 @@ async function show(view) {
   const cfg = VIEWS[view] || VIEWS.overview;
   current = VIEWS[view] ? view : "overview";
   title.textContent = cfg.title;
-  setActiveNav(current);
+  setActiveNav(cfg.nav || current);
   if (location.hash !== `#${current}`) history.replaceState(null, "", `#${current}`);
   await cfg.render(root);
 }
