@@ -63,7 +63,9 @@ function getVisibleProducts() {
     case "price-desc": list.sort((a, b) => b.price - a.price); break;
     case "rating": list.sort((a, b) => b.rating - a.rating); break;
   }
-  return list;
+  // Sold-out items stay visible but always sit after everything in stock,
+  // whichever sort is selected.
+  return window.ProductCard.outOfStockLast(list);
 }
 
 function renderProducts() {
@@ -101,10 +103,13 @@ function renderDeals() {
   const section = $("#deals");
   const grid = $("#dealsGrid");
   if (!section || !grid) return;
-  const deals = PRODUCTS
-    .filter(p => discountInfo(p))
-    .sort((a, b) => (discountInfo(b)?.pct || 0) - (discountInfo(a)?.pct || 0))
-    .slice(0, 8);
+  // Biggest discount first, then sold-out ones last — so the row leads with
+  // deals a shopper can actually buy (and they're the ones kept by the slice).
+  const deals = window.ProductCard.outOfStockLast(
+    PRODUCTS
+      .filter(p => discountInfo(p))
+      .sort((a, b) => (discountInfo(b)?.pct || 0) - (discountInfo(a)?.pct || 0))
+  ).slice(0, 8);
   if (!deals.length) { section.hidden = true; return; }
   section.hidden = false;
   window.ProductCard.renderGrid(grid, deals, {
