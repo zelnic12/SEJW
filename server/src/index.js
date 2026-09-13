@@ -18,6 +18,7 @@ import paymentsRouter from "./routes/payments.js";
 import { publicPromoRouter, adminPromoRouter } from "./routes/promo-codes.js";
 import { publicBannersRouter, adminBannersRouter } from "./routes/banners.js";
 import brandLogosRouter from "./routes/brand-logos.js";
+import { publicAftersalesRouter, adminAftersalesRouter } from "./routes/aftersales.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +70,10 @@ app.use("/api/banners", publicBannersRouter);
 app.use("/api/admin/banners", requireAuth, adminBannersRouter);
 // Which brands have a logo file (public, read-only) — used by the brand row.
 app.use("/api/brand-logos", brandLogosRouter);
+// Aftersales: public submit/track (order id + email is the credential) and
+// admin case management (JWT).
+app.use("/api/aftersales", publicAftersalesRouter);
+app.use("/api/admin/aftersales", requireAuth, adminAftersalesRouter);
 // Analytics are admin-only — protected at the mount point.
 app.use("/api/analytics", requireAuth, analyticsRouter);
 

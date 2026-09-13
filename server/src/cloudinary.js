@@ -21,6 +21,8 @@ const ROOT_FOLDER = process.env.CLOUDINARY_FOLDER || "sinar-elektronik";
 export const FOLDERS = {
   products: `${ROOT_FOLDER}/products`,
   banners: `${ROOT_FOLDER}/banners`,
+  // Evidence photos attached to warranty claims / return requests.
+  aftersales: `${ROOT_FOLDER}/aftersales`,
 };
 
 // Uploads are only possible when all three credentials are present. When they

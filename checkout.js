@@ -422,6 +422,13 @@ function showConfirmation(order, { pending = false } = {}) {
     $(".confirm-actions").hidden = true;
   }
 
+  // Aftersales entry point — prefill the request form with this order.
+  const aftersalesLink = $("#aftersalesLink");
+  if (aftersalesLink) {
+    aftersalesLink.href = `aftersales.html?order=${encodeURIComponent(order.id)}` +
+      `&email=${encodeURIComponent(c.email || "")}`;
+  }
+
   $("#checkoutView").hidden = true;
   $("#confirmationView").hidden = false;
 

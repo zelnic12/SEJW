@@ -258,6 +258,37 @@ Read-only aggregate endpoints powering `/admin.html` (all require a Bearer token
 > Seed demo orders for meaningful analytics with `npm run seed:orders`
 > (or `npm run db:demo` to migrate + seed products + seed orders in one go).
 
+### Aftersales (warranty claims + returns/exchanges)
+
+Customers don't have accounts, so the **order id + the email on that order** is the
+credential for opening a request (the same gate the verified-purchase review check
+uses), and the returned **tracking code** is the key for looking one up afterwards.
+There is deliberately no public endpoint that lists requests.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/aftersales/verify-order` | — | Check an order id + email, and list that order's items |
+| POST | `/api/aftersales`              | — | Open a request (multipart; `photos` optional, up to 5) |
+| GET  | `/api/aftersales/:id`          | — | Track one request by its tracking code |
+| GET  | `/api/admin/aftersales?type=&status=` | JWT | All requests + per-status counts |
+| GET  | `/api/admin/aftersales/:id`    | JWT | Full detail incl. the linked order and allowed next statuses |
+| PATCH | `/api/admin/aftersales/:id`   | JWT | Move the status and/or write customer-visible notes |
+
+- **Order eligibility**: only `shipped` and `completed` orders can be claimed
+  against — anything else is refused with a message explaining why.
+- **Workflow**: `submitted → under_review → approved → processing → completed`,
+  with `rejected` as a terminal branch (like `cancelled` for orders). Invalid
+  jumps are rejected with a `400` naming the allowed next steps; the admin UI only
+  renders the transitions the server permits.
+- **Evidence photos** reuse the Cloudinary flow (`<CLOUDINARY_FOLDER>/aftersales`);
+  the DB stores the URL + `public_id`, and an upload is rolled back if the insert
+  fails. Requests without photos work even when Cloudinary isn't configured.
+- **`admin_notes`** is written by staff and shown to the customer on the tracking
+  page. The public payload masks the email and never exposes Cloudinary ids.
+
+Storefront: `/aftersales.html` (request form + tracking timeline), linked from the
+footer of every page and from the order confirmation screen.
+
 ## Error responses
 
 Errors are JSON: `{ "error": "…", "details": [ … ] }`.
