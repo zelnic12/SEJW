@@ -617,3 +617,21 @@ img { max-width: 100%; display: block; }
   padding: .08rem .4rem; border-radius: 999px; margin-left: .4rem; vertical-align: middle;
 }
 .review-note { font-size: .8rem; color: var(--text-secondary); margin-bottom: .7rem; }
+
+
+/* ---- Promo code (checkout) ---- */
+.promo-box { margin: 1rem 0; padding-top: 1rem; border-top: 1px solid var(--border); }
+.promo-entry { display: flex; gap: .5rem; }
+.promo-input {
+  flex: 1; background: var(--surface-secondary); border: 1px solid var(--border); color: var(--text-primary);
+  padding: .55rem .7rem; border-radius: var(--radius-sm); font-size: .9rem; font-family: inherit;
+}
+.promo-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.promo-applied {
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+  background: #e8f6ee; border: 1px solid #b8e0c8; border-radius: var(--radius-sm); padding: .6rem .8rem;
+}
+.promo-applied-text { font-size: .85rem; color: var(--text-primary); }
+.promo-applied-text strong { color: var(--success); }
+.promo-error { color: var(--danger); font-size: .82rem; margin-top: .5rem; }
+.summary-row #sumDiscount, #sumDiscount { color: var(--success); }

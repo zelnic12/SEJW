@@ -100,6 +100,11 @@ export const api = {
   getConversation: id => request(`/admin/chat/conversations/${id}/messages`),
   replyConversation: (id, body) => request(`/admin/chat/conversations/${id}/messages`, { method: "POST", body: { body } }),
 
+  // Promo codes (admin)
+  listPromoCodes: () => request("/admin/promo-codes"),
+  createPromoCode: data => request("/admin/promo-codes", { method: "POST", body: data }),
+  updatePromoCode: (id, data) => request(`/admin/promo-codes/${id}`, { method: "PATCH", body: data }),
+
   // Orders
   listOrders: () => request("/orders"),
   getOrder: id => request(`/orders/${id}`),

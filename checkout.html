@@ -135,8 +135,23 @@
         <aside class="order-summary">
           <h2>Order summary</h2>
           <div id="summaryItems" class="summary-items"></div>
+
+          <!-- Promo code -->
+          <div class="promo-box">
+            <div id="promoEntry" class="promo-entry">
+              <input id="promoInput" class="promo-input" type="text" placeholder="Have a promo code?" autocomplete="off" />
+              <button type="button" id="promoApply" class="btn btn-secondary btn-sm">Apply</button>
+            </div>
+            <div id="promoApplied" class="promo-applied" hidden>
+              <span class="promo-applied-text">Code <strong id="promoAppliedCode"></strong> applied: <span id="promoAppliedAmount"></span></span>
+              <button type="button" id="promoRemove" class="link-btn">Remove</button>
+            </div>
+            <p id="promoError" class="promo-error" hidden></p>
+          </div>
+
           <div class="summary-totals">
             <div class="summary-row"><span>Subtotal</span><span id="sumSubtotal">$0.00</span></div>
+            <div class="summary-row" id="sumDiscountRow" hidden><span id="sumDiscountLabel">Discount</span><span id="sumDiscount">−$0.00</span></div>
             <div class="summary-row" id="sumShipRow"><span id="sumShipLabel">Shipping</span><span id="sumShipping">$0.00</span></div>
             <div class="summary-row"><span>Tax (est.)</span><span id="sumTax">$0.00</span></div>
             <div class="summary-row grand"><span>Total</span><strong id="sumTotal">$0.00</strong></div>

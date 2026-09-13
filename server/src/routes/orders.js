@@ -128,15 +128,33 @@ router.post("/", async (req, res, next) => {
 
     // Compute authoritative totals server-side from the effective prices.
     const subtotal = round2(lineItems.reduce((s, li) => s + li.price * li.qty, 0));
-    // Discount = total savings vs. regular price (informational; already reflected in subtotal).
-    const discount = round2(lineItems.reduce((s, li) => s + (li.regularPrice - li.price) * li.qty, 0));
+    // Sale savings vs. regular price (informational; already reflected in subtotal).
+    const saleDiscount = round2(lineItems.reduce((s, li) => s + (li.regularPrice - li.price) * li.qty, 0));
+
+    // Promo code — re-validate server-side (never trust a client discount amount).
+    // Fast-fail here with a clear 400; the actual atomic redeem happens inside
+    // the order transaction (createOrder) so used_count can't be over-consumed.
+    const promoCode = typeof req.body?.promoCode === "string" ? req.body.promoCode.trim() : "";
+    let promoDiscount = 0;
+    if (promoCode) {
+      const check = await store.validatePromo(promoCode, subtotal);
+      if (!check.valid) {
+        return res.status(400).json({ error: check.reason || "Promo code is not valid.", promoInvalid: true });
+      }
+      promoDiscount = check.discount;
+    }
+
+    // The promo reduces the taxable base: subtotal → minus promo → tax/shipping.
+    const discountedSubtotal = round2(Math.max(0, subtotal - promoDiscount));
     // Pickup orders are collected in-store → NO shipping fee. Delivery uses the
     // usual rule (free over threshold, else flat fee). Computed server-side.
     const shipping = fulfillmentMethod === "pickup"
       ? 0
-      : (subtotal === 0 ? 0 : (subtotal >= CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : CONFIG.SHIPPING_FEE));
-    const tax = round2(subtotal * CONFIG.TAX_RATE);
-    const total = round2(subtotal + shipping + tax);
+      : (discountedSubtotal === 0 ? 0 : (discountedSubtotal >= CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : CONFIG.SHIPPING_FEE));
+    const tax = round2(discountedSubtotal * CONFIG.TAX_RATE);
+    const total = round2(discountedSubtotal + shipping + tax);
+    // Stored order-level discount = sale savings + promo discount.
+    const discount = round2(saleDiscount + promoDiscount);
 
     const order = {
       id: generateOrderId(),
@@ -156,6 +174,8 @@ router.post("/", async (req, res, next) => {
         country: (customer.country || "").trim(),
       },
       fulfillmentMethod,
+      promoCode: promoCode || null,
+      promoDiscount,
       items: lineItems,
       amounts: { subtotal, discount, shipping, tax, total },
       // If an online payment is required, the order waits for payment and only
@@ -166,7 +186,16 @@ router.post("/", async (req, res, next) => {
     };
 
     // Persist the order (customer upsert + items + stock decrement, atomically).
-    let saved = await store.createOrder(order);
+    let saved;
+    try {
+      saved = await store.createOrder(order);
+    } catch (e) {
+      // Promo became invalid between validation and placement (race) → clear 400.
+      if (e && e.promoInvalid) {
+        return res.status(400).json({ error: e.message, promoInvalid: true });
+      }
+      throw e;
+    }
 
     // Create the Midtrans Snap transaction AFTER the order is persisted, using
     // the order's own id as order_id and the SERVER-computed total as

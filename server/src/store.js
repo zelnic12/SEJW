@@ -174,6 +174,7 @@ function mapOrder(orderRow, itemRows) {
     paymentRedirectUrl: orderRow.payment_redirect_url ?? null,
     paymentTxnId: orderRow.payment_txn_id ?? null,
     fulfillmentMethod: orderRow.fulfillment_method ?? "delivery",
+    promoCode: orderRow.promo_code ?? null,
   };
 }
 
@@ -227,6 +228,18 @@ export async function createOrder(order) {
   return withTransaction(async (client) => {
     const c = order.customer;
 
+    // Atomically redeem the promo code (if any) inside this transaction. If it
+    // became invalid since validation (e.g. last use consumed by someone else),
+    // throw a tagged error so the whole order rolls back and the route can 400.
+    if (order.promoCode) {
+      const redeem = await redeemPromo(client, order.promoCode, order.amounts.subtotal);
+      if (!redeem.ok) {
+        const e = new Error(redeem.reason || "Promo code is no longer valid.");
+        e.promoInvalid = true;
+        throw e;
+      }
+    }
+
     // Upsert the customer by email; keep their latest details.
     const { rows: custRows } = await client.query(
       `INSERT INTO customers (name, email, phone, address, city, postal, country)
@@ -244,8 +257,8 @@ export async function createOrder(order) {
       `INSERT INTO orders
          (id, customer_id, ship_name, ship_email, ship_phone, ship_address,
           ship_city, ship_postal, ship_country, subtotal, discount, shipping, tax, total,
-          status, created_at, invoice_no, access_token, fulfillment_method)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+          status, created_at, invoice_no, access_token, fulfillment_method, promo_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         order.id, customerId, c.name, c.email, c.phone, c.address,
         c.city, c.postal, c.country,
@@ -253,6 +266,7 @@ export async function createOrder(order) {
         order.amounts.tax, order.amounts.total,
         order.status, order.createdAt, order.invoiceNo ?? null, order.accessToken ?? null,
         order.fulfillmentMethod === "pickup" ? "pickup" : "delivery",
+        order.promoCode ?? null,
       ]
     );
 
@@ -772,4 +786,119 @@ export async function createReview(productId, { reviewerName, email, rating, com
   );
   const row = rows[0];
   return { review: mapReview(row), updated: row.was_update === true };
+}
+
+
+// ============================================================================
+// Promo / discount codes
+// ============================================================================
+function mapPromo(row) {
+  return {
+    id: row.id,
+    code: row.code,
+    discountType: row.discount_type,
+    discountValue: Number(row.discount_value),
+    maxUses: row.max_uses == null ? null : Number(row.max_uses),
+    usedCount: Number(row.used_count),
+    expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : row.expires_at,
+    isActive: row.is_active,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+// Compute the discount amount for a promo against a subtotal.
+// Percentage → subtotal * value/100; fixed → value (capped at subtotal).
+// Never negative, never more than the subtotal.
+export function computePromoDiscount(promo, subtotal) {
+  const sub = Number(subtotal) || 0;
+  let amount = promo.discountType === "percentage"
+    ? sub * (Number(promo.discountValue) / 100)
+    : Number(promo.discountValue);
+  amount = Math.round(amount * 100) / 100;
+  return Math.max(0, Math.min(amount, sub));
+}
+
+// Fetch a promo by code (case-insensitive). Optional client for use in a tx.
+export async function findPromoByCode(code, client = null) {
+  const runner = client || { query };
+  const q = "SELECT * FROM promo_codes WHERE lower(code) = lower($1)";
+  const { rows } = client ? await client.query(q, [code]) : await query(q, [code]);
+  return rows[0] ? mapPromo(rows[0]) : null;
+}
+
+// Validate a code against a subtotal WITHOUT redeeming it.
+// Returns { valid, reason?, discount?, promo? }.
+export async function validatePromo(code, subtotal) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return { valid: false, reason: "Please enter a promo code." };
+  const promo = await findPromoByCode(trimmed);
+  if (!promo) return { valid: false, reason: "This promo code doesn't exist." };
+  if (!promo.isActive) return { valid: false, reason: "This promo code is no longer active." };
+  if (promo.expiresAt && new Date(promo.expiresAt).getTime() < Date.now()) {
+    return { valid: false, reason: "This promo code has expired." };
+  }
+  if (promo.maxUses != null && promo.usedCount >= promo.maxUses) {
+    return { valid: false, reason: "This promo code has reached its usage limit." };
+  }
+  const discount = computePromoDiscount(promo, subtotal);
+  return { valid: true, discount, promo };
+}
+
+// Atomically redeem a promo INSIDE an existing transaction client. Re-checks
+// validity + increments used_count in one guarded UPDATE to avoid races.
+// Returns { ok, reason?, promo? }.
+export async function redeemPromo(client, code, subtotal) {
+  const promo = await findPromoByCode(code, client);
+  if (!promo) return { ok: false, reason: "This promo code doesn't exist." };
+  // Guarded increment: only succeeds if still active, not expired, and under the cap.
+  const { rows } = await client.query(
+    `UPDATE promo_codes
+        SET used_count = used_count + 1
+      WHERE id = $1
+        AND is_active = true
+        AND (expires_at IS NULL OR expires_at > now())
+        AND (max_uses IS NULL OR used_count < max_uses)
+      RETURNING *`,
+    [promo.id]
+  );
+  if (rows.length === 0) {
+    return { ok: false, reason: "This promo code is no longer valid. Please remove it and try again." };
+  }
+  const updated = mapPromo(rows[0]);
+  return { ok: true, promo: updated, discount: computePromoDiscount(updated, subtotal) };
+}
+
+// ---- Admin CRUD ----
+export async function listPromoCodes() {
+  const { rows } = await query("SELECT * FROM promo_codes ORDER BY created_at DESC, id DESC");
+  return rows.map(mapPromo);
+}
+
+export async function createPromoCode(data) {
+  const { rows } = await query(
+    `INSERT INTO promo_codes (code, discount_type, discount_value, max_uses, expires_at, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [data.code, data.discountType, data.discountValue, data.maxUses ?? null,
+     data.expiresAt ?? null, data.isActive ?? true]
+  );
+  return mapPromo(rows[0]);
+}
+
+// Partial update (used for the active toggle + edits).
+export async function updatePromoCode(id, data) {
+  const map = {
+    code: "code", discountType: "discount_type", discountValue: "discount_value",
+    maxUses: "max_uses", expiresAt: "expires_at", isActive: "is_active",
+  };
+  const sets = []; const values = []; let i = 1;
+  for (const [k, col] of Object.entries(map)) {
+    if (data[k] !== undefined) { sets.push(`${col} = $${i++}`); values.push(data[k]); }
+  }
+  if (sets.length === 0) {
+    const { rows } = await query("SELECT * FROM promo_codes WHERE id = $1", [Number(id)]);
+    return rows[0] ? mapPromo(rows[0]) : null;
+  }
+  values.push(Number(id));
+  const { rows } = await query(`UPDATE promo_codes SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`, values);
+  return rows[0] ? mapPromo(rows[0]) : null;
 }

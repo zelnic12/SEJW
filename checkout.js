@@ -7,6 +7,11 @@ const API_BASE = "/api";
 // the shipping address and the shipping fee (server recomputes authoritatively).
 let fulfillmentMethod = "delivery";
 
+// Applied promo code (client-side, for display). The SERVER re-validates and
+// recomputes the discount authoritatively when the order is placed.
+// { code, discount } or null.
+let appliedPromo = null;
+
 /* =========================================================================
  * Payment abstraction
  * -------------------------------------------------------------------------
@@ -70,12 +75,7 @@ const activeProvider = MockPaymentProvider;
  * ========================================================================= */
 function renderSummary() {
   const base = VE.computeTotals();
-  const { entries, subtotal, tax } = base;
-  // Pickup → no shipping fee; recompute the total for display. (The server
-  // independently recomputes the authoritative total on order placement.)
-  const isPickup = fulfillmentMethod === "pickup";
-  const shipping = isPickup ? 0 : base.shipping;
-  const total = isPickup ? +(subtotal + tax).toFixed(2) : base.total;
+  const { entries, subtotal } = base;
 
   // Empty cart: hide the form, show a notice.
   if (entries.length === 0) {
@@ -85,6 +85,18 @@ function renderSummary() {
   }
   $("#checkoutGrid").hidden = false;
   $("#emptyCart").hidden = true;
+
+  // Mirror the server's math for DISPLAY (server stays authoritative on placement):
+  // subtotal → minus promo discount → shipping (free for pickup) + tax off the
+  // discounted base.
+  const isPickup = fulfillmentMethod === "pickup";
+  const promoDiscount = appliedPromo ? Math.min(appliedPromo.discount, subtotal) : 0;
+  const discountedSubtotal = Math.max(0, +(subtotal - promoDiscount).toFixed(2));
+  const shipping = isPickup
+    ? 0
+    : (discountedSubtotal === 0 ? 0 : (discountedSubtotal >= VE.CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : VE.CONFIG.SHIPPING_FEE));
+  const tax = +(discountedSubtotal * VE.CONFIG.TAX_RATE).toFixed(2);
+  const total = +(discountedSubtotal + shipping + tax).toFixed(2);
 
   $("#summaryItems").innerHTML = entries.map(({ product, qty }) => `
     <div class="summary-item">
@@ -98,19 +110,28 @@ function renderSummary() {
   `).join("");
 
   $("#sumSubtotal").textContent = VE.money(subtotal);
+  // Promo discount row (only when a code is applied).
+  const discRow = $("#sumDiscountRow");
+  if (discRow) {
+    discRow.hidden = !appliedPromo || promoDiscount <= 0;
+    if (appliedPromo) {
+      $("#sumDiscountLabel").textContent = `Discount (${appliedPromo.code})`;
+      $("#sumDiscount").textContent = `− ${VE.money(promoDiscount)}`;
+    }
+  }
   // Hide the shipping row entirely for pickup (no shipping fee at all).
   const shipRow = $("#sumShipRow");
   if (shipRow) shipRow.hidden = isPickup;
   $("#sumShipping").textContent = shipping === 0 ? "Free" : VE.money(shipping);
   $("#sumShipLabel").textContent =
-    subtotal > 0 && subtotal < VE.CONFIG.FREE_SHIPPING_THRESHOLD
+    discountedSubtotal > 0 && discountedSubtotal < VE.CONFIG.FREE_SHIPPING_THRESHOLD
       ? `Shipping (free over ${VE.money(VE.CONFIG.FREE_SHIPPING_THRESHOLD)})`
       : "Shipping";
   $("#sumTax").textContent = VE.money(tax);
   $("#sumTotal").textContent = VE.money(total);
   $("#payAmount").textContent = VE.money(total);
 
-  return { empty: false, subtotal, shipping, tax, total, entries };
+  return { empty: false, subtotal, shipping, tax, total, entries, promoDiscount };
 }
 
 /* =========================================================================
@@ -232,11 +253,20 @@ async function handleSubmit(e) {
     const res = await fetch(`${API_BASE}/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customer: order.customer, items: order.items, fulfillmentMethod }),
+      body: JSON.stringify({ customer: order.customer, items: order.items, fulfillmentMethod, promoCode: appliedPromo ? appliedPromo.code : null }),
     });
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
+      // Promo went invalid between validation and placement → clear it so the
+      // customer can retry without the code.
+      if (body.promoInvalid) {
+        appliedPromo = null;
+        showPromoState();
+        renderSummary();
+        $("#promoError").textContent = body.error || "Your promo code is no longer valid — it has been removed.";
+        $("#promoError").hidden = false;
+      }
       const detail = Array.isArray(body.details) ? body.details.join(" ") : "";
       throw new Error([body.error, detail].filter(Boolean).join(": ") || "Could not place the order.");
     }
@@ -404,6 +434,63 @@ function showConfirmation(order, { pending = false } = {}) {
 }
 
 /* =========================================================================
+ * Promo code
+ * ========================================================================= */
+// Toggle the entry field vs. the "applied" row.
+function showPromoState() {
+  const entry = $("#promoEntry");
+  const applied = $("#promoApplied");
+  if (appliedPromo) {
+    entry.hidden = true;
+    applied.hidden = false;
+    $("#promoAppliedCode").textContent = appliedPromo.code;
+    $("#promoAppliedAmount").textContent = `− ${VE.money(appliedPromo.discount)}`;
+  } else {
+    entry.hidden = false;
+    applied.hidden = true;
+    $("#promoInput").value = "";
+  }
+}
+
+async function applyPromo() {
+  const err = $("#promoError");
+  err.hidden = true;
+  const code = $("#promoInput").value.trim();
+  if (!code) { err.textContent = "Please enter a promo code."; err.hidden = false; return; }
+  const { subtotal } = VE.computeTotals();
+  const btn = $("#promoApply");
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/promo-codes/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, subtotal }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.valid) {
+      err.textContent = data.error || "This promo code is not valid.";
+      err.hidden = false;
+      return;
+    }
+    appliedPromo = { code: data.code, discount: data.discount };
+    showPromoState();
+    renderSummary();
+  } catch {
+    err.textContent = "Could not validate the code. Please try again.";
+    err.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function removePromo() {
+  appliedPromo = null;
+  $("#promoError").hidden = true;
+  showPromoState();
+  renderSummary();
+}
+
+/* =========================================================================
  * Init
  * ========================================================================= */
 async function init() {
@@ -417,6 +504,13 @@ async function init() {
   const totals = renderSummary();
   activeProvider.mount($("#paymentMount"), { totals });
   $("#checkoutForm").addEventListener("submit", handleSubmit);
+
+  // Promo code: apply / remove / Enter-to-apply.
+  $("#promoApply").addEventListener("click", applyPromo);
+  $("#promoRemove").addEventListener("click", removePromo);
+  $("#promoInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); applyPromo(); }
+  });
 
   // Fulfillment method toggle: show/hide shipping address, recompute summary.
   const shippingSection = $("#shippingSection");
