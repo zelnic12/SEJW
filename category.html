@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sinar Elektronik — Toko Elektronik Terpercaya</title>
-  <meta name="description" content="Sinar Elektronik — laptop, smartphone, audio, gaming, dan smart home dari brand terpercaya. Harga bersaing, pengiriman cepat." />
+  <title>Category — Sinar Elektronik</title>
+  <meta name="description" content="Jelajahi produk Sinar Elektronik berdasarkan kategori." />
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 </head>
-<body>
-  <!-- Header: logo · Categories mega-menu · search · account/cart -->
+<body data-listing="category">
+  <!-- Header (same structure as the homepage) -->
   <header class="site-header">
     <div class="container header-inner">
       <a href="index.html" class="brand" aria-label="Sinar Elektronik home">
@@ -19,7 +19,6 @@
         <span class="brand-name">Sinar <span>Elektronik</span></span>
       </a>
 
-      <!-- Categories dropdown (filled from the live catalog by site-header.js) -->
       <div class="cat-menu" id="catMenu">
         <button type="button" class="cat-menu-btn" id="catMenuBtn" aria-expanded="false" aria-controls="catMenuPanel" aria-haspopup="true">
           <span class="cat-menu-bars" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -39,7 +38,7 @@
       </div>
 
       <div class="search-wrap">
-        <input type="search" id="searchInput" class="search-input" placeholder="Search products, brands and more…" aria-label="Search products" />
+        <input type="search" id="searchInput" class="search-input" placeholder="Search in this category…" aria-label="Search products" />
         <span class="search-icon" aria-hidden="true">🔍</span>
       </div>
 
@@ -55,53 +54,36 @@
       </nav>
     </div>
 
-    <!-- Slim secondary row: every link resolves (catalog + real categories) -->
     <div class="header-sub">
       <div class="container header-sub-inner">
-        <a class="sub-link is-active" href="index.html">All Products</a>
+        <a class="sub-link" href="index.html">All Products</a>
         <span id="headerQuickLinks" class="sub-links"></span>
-        <a class="sub-link sub-link-accent" href="#deals">Exclusive Deals</a>
+        <a class="sub-link sub-link-accent" href="index.html#deals">Exclusive Deals</a>
       </div>
     </div>
   </header>
 
-  <!-- Hero banner carousel (admin-managed; removed entirely when no active slides) -->
-  <section id="heroCarousel" class="banner-carousel" aria-roledescription="carousel" aria-label="Store promotions" hidden></section>
+  <main class="container listing-page">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="index.html">Home</a>
+      <span aria-hidden="true">/</span>
+      <a href="index.html#catalog">All products</a>
+      <span aria-hidden="true">/</span>
+      <span id="crumbCurrent" class="breadcrumb-current">Category</span>
+    </nav>
 
-  <!-- Service promises -->
-  <ul class="trust-strip container">
-    <li>✓ Pengiriman cepat</li>
-    <li>✓ Garansi resmi</li>
-    <li>✓ Produk original</li>
-  </ul>
-
-  <!-- Quick category navigation (built from the catalog) -->
-  <nav class="cat-nav-section container" aria-label="Browse by category">
-    <div class="cat-nav-head">
-      <h2>Browse by category</h2>
-      <a class="link-more" href="#catalog">View all products →</a>
-    </div>
-    <div class="cat-nav-row" id="categoryIconRow"></div>
-  </nav>
-
-  <!-- Exclusive deals (only rendered when discounted products exist) -->
-  <section id="deals" class="deals-section container" hidden>
-    <div class="deals-head">
+    <div class="listing-head">
+      <span class="listing-icon" id="listingIcon" aria-hidden="true"></span>
       <div>
-        <h2>Exclusive Deals</h2>
-        <p class="deals-sub">Produk pilihan dengan harga promo — selama persediaan masih ada.</p>
+        <h1 id="listingTitle">Category</h1>
+        <p class="listing-count" id="listingCount"></p>
       </div>
-      <a class="link-more" href="#catalog">Lihat semua produk →</a>
+      <a class="btn btn-secondary btn-sm listing-back" href="index.html#catalog">← Back to full catalog</a>
     </div>
-    <div class="product-grid deals-grid" id="dealsGrid"></div>
-  </section>
 
-  <!-- Catalog -->
-  <main id="catalog" class="container catalog-section">
-    <div class="catalog-head">
-      <h2>Shop the catalog</h2>
+    <div class="catalog-head listing-controls">
       <div class="catalog-controls">
-        <div class="filters" id="categoryFilters" role="tablist" aria-label="Product categories"></div>
+        <div class="filters" id="secondaryFilters" role="tablist" aria-label="Filter by brand"></div>
         <select id="sortSelect" class="sort-select" aria-label="Sort products">
           <option value="featured">Featured</option>
           <option value="price-asc">Price: Low to High</option>
@@ -115,14 +97,7 @@
     <p id="emptyState" class="empty-state" hidden>No products match your search.</p>
   </main>
 
-  <!-- Product detail modal -->
-  <div id="detailOverlay" class="detail-overlay" hidden></div>
-  <div id="detailModal" class="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle" aria-hidden="true">
-    <button id="detailClose" class="detail-close icon-btn" aria-label="Close product details">✕</button>
-    <div id="detailBody" class="detail-body"></div>
-  </div>
-
-  <!-- Cart drawer -->
+  <!-- Cart drawer (shared markup + shared cart-ui.js) -->
   <div id="cartOverlay" class="cart-overlay" hidden></div>
   <aside id="cartDrawer" class="cart-drawer" aria-label="Shopping cart" aria-hidden="true">
     <div class="cart-header">
@@ -134,23 +109,21 @@
       <div class="cart-summary">
         <div class="summary-row">
           <span>Subtotal</span>
-          <span id="cartSubtotal">$0.00</span>
+          <span id="cartSubtotal">Rp 0</span>
         </div>
         <div class="summary-row">
           <span id="shippingLabel">Shipping</span>
-          <span id="cartShipping">$0.00</span>
+          <span id="cartShipping">Rp 0</span>
         </div>
         <div class="summary-row cart-total-row">
           <span>Total</span>
-          <strong id="cartTotal">$0.00</strong>
+          <strong id="cartTotal">Rp 0</strong>
         </div>
       </div>
       <button id="checkoutBtn" class="btn btn-primary btn-block" disabled>Checkout</button>
-      <p id="checkoutMsg" class="checkout-msg" hidden>🎉 Thanks! This is a demo — no payment was taken.</p>
     </div>
   </aside>
 
-  <!-- Footer -->
   <footer class="site-footer">
     <div class="container footer-inner">
       <div>
@@ -177,8 +150,7 @@
   <script src="cart-ui.js"></script>
   <script src="category-icons.js"></script>
   <script src="site-header.js"></script>
-  <script src="banner-carousel.js"></script>
-  <script src="script.js"></script>
+  <script src="listing.js"></script>
   <script src="chat-widget.js"></script>
 </body>
 </html>

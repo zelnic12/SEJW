@@ -16,6 +16,7 @@ import storeSettingsRouter from "./routes/store-settings.js";
 import { publicChatRouter, adminChatRouter } from "./routes/chat.js";
 import paymentsRouter from "./routes/payments.js";
 import { publicPromoRouter, adminPromoRouter } from "./routes/promo-codes.js";
+import { publicBannersRouter, adminBannersRouter } from "./routes/banners.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,6 +62,9 @@ app.use("/api/admin/chat", requireAuth, adminChatRouter);
 // Promo codes: public validate endpoint + admin CRUD (JWT).
 app.use("/api/promo-codes", publicPromoRouter);
 app.use("/api/admin/promo-codes", requireAuth, adminPromoRouter);
+// Homepage hero banners: public read of active slides + admin CRUD (JWT).
+app.use("/api/banners", publicBannersRouter);
+app.use("/api/admin/banners", requireAuth, adminBannersRouter);
 // Analytics are admin-only — protected at the mount point.
 app.use("/api/analytics", requireAuth, analyticsRouter);
 

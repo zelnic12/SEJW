@@ -14,61 +14,23 @@ async function loadProducts() {
   CATEGORIES = ["All", ...new Set(PRODUCTS.map(p => p.category))];
 }
 
-// ---- Cart config ----
-const SHIPPING_FEE = 9.99;             // Flat shipping fee below the threshold.
-const FREE_SHIPPING_THRESHOLD = 100;   // Free shipping at/above this subtotal.
-
 // ---- State ----
+// Cart state + drawer rendering live in cart-ui.js (shared with the listing pages).
 let state = {
   category: "All",
   search: "",
   sort: "featured",
-  cart: JSON.parse(localStorage.getItem("voltedge_cart") || "{}"),
 };
 
 // ---- Helpers ----
-// Indonesian Rupiah: "Rp " prefix, thousands dots, no decimal cents.
-const money = n => "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
+// Formatting, discount and card helpers live in product-card.js so the homepage
+// and the category/brand listing pages share one implementation.
+const { money, esc, discountInfo, imageMarkup, primaryImage, priceOf } = window.ProductCard;
 const $ = sel => document.querySelector(sel);
-const saveCart = () => localStorage.setItem("voltedge_cart", JSON.stringify(state.cart));
 const getProduct = id => PRODUCTS.find(p => p.id === Number(id));
-// Escape any dynamic text before injecting into innerHTML.
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-// Discount helper. Returns { original, sale, pct } when a product is on sale,
-// else null (so cards/detail render normally). Uses the API's promo fields
-// (salePrice/onSale/discountPercent) with a legacy fallback.
-function discountInfo(p) {
-  const original = Number(p.price);
-  const sale = p.salePrice != null ? Number(p.salePrice) : Number(p.originalPrice != null ? p.price : NaN);
-  const active = (p.onSale === true) || (Number.isFinite(sale) && sale >= 0 && sale < original);
-  if (!active || !original || !Number.isFinite(sale) || sale >= original) return null;
-  const pct = p.discountPercent || Math.round((1 - sale / original) * 100);
-  return { original, sale, pct };
-}
-
-// Resolve a product's primary image to a renderable HTML fragment. Uploaded
-// images use a real URL; the seed placeholders use an "emoji:<char>" scheme.
-function imageMarkup(url, emoji, cls = "") {
-  if (typeof url === "string" && url && !url.startsWith("emoji:")) {
-    return `<img class="${cls}" src="${esc(url)}" alt="" loading="lazy" />`;
-  }
-  const glyph = (typeof url === "string" && url.startsWith("emoji:")) ? url.slice(6) : emoji;
-  return `<span class="media-emoji ${cls}">${glyph || emoji}</span>`;
-}
-
-// The first image (lowest position) is primary; falls back to the emoji.
-function primaryImage(p) {
-  return (p.images && p.images.length) ? p.images[0].url : `emoji:${p.emoji}`;
-}
-
-// Effective (charged) price — promotional price when on sale, else regular.
-// Mirrors the server's authoritative rule; used for cart display math only.
-function priceOf(p) {
-  if (p.effectivePrice != null) return Number(p.effectivePrice);
-  const d = discountInfo(p);
-  return d ? d.sale : Number(p.price);
-}
+// Cart operations are delegated to the shared drawer module.
+const addToCart = (id, qty = 1) => window.CartUI.add(id, qty);
+const cartEntries = () => window.CartUI.entries();
 
 // ---- Render category filters ----
 function renderFilters() {
@@ -105,57 +67,60 @@ function getVisibleProducts() {
 }
 
 function renderProducts() {
-  const grid = $("#productGrid");
   const list = getVisibleProducts();
   $("#emptyState").hidden = list.length !== 0;
-
-  grid.innerHTML = list.map(p => {
-    const out = p.stock <= 0;
-    const low = !out && p.stock <= 5;
-    const stockTag = out
-      ? `<span class="stock-pill out">Out of stock</span>`
-      : low ? `<span class="stock-pill low">Only ${p.stock} left</span>` : "";
-    const d = discountInfo(p);
-    const saleTag = d ? `<span class="sale-badge">${d.pct}% OFF</span>` : "";
-    const priceBlock = d
-      ? `<div class="card-prices">
-           <span class="card-price on-sale">${money(d.sale)}</span>
-           <span class="price-original">${money(d.original)}</span>
-         </div>`
-      : `<span class="card-price">${money(p.price)}</span>`;
-    return `
-    <article class="card ${out ? "is-out" : ""}" data-view="${p.id}" tabindex="0" role="button" aria-label="View details for ${esc(p.name)}">
-      <div class="card-media">${imageMarkup(primaryImage(p), p.emoji)}${stockTag}${saleTag}</div>
-      <div class="card-body">
-        <span class="card-cat">${esc(p.brand)} · ${esc(p.category)}</span>
-        <span class="card-name">${esc(p.name)}</span>
-        ${p.reviewCount > 0
-          ? `<span class="card-rating">★ ${p.avgRating.toFixed(1)} <span class="card-rating-count">(${p.reviewCount})</span></span>`
-          : `<span class="card-rating muted">No reviews yet</span>`}
-        <div class="card-bottom">
-          ${priceBlock}
-          <button class="add-btn" data-add="${p.id}" ${out ? "disabled" : ""}>${out ? "Sold out" : "Add to cart"}</button>
-        </div>
-      </div>
-    </article>`;
-  }).join("");
-
-  // Add-to-cart button (stop propagation so it doesn't open the detail view).
-  grid.querySelectorAll("[data-add]").forEach(btn => {
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      addToCart(Number(btn.dataset.add));
-    });
+  window.ProductCard.renderGrid($("#productGrid"), list, {
+    onOpen: openProduct,
+    onAdd: id => addToCart(id),
   });
+}
 
-  // Whole card opens the detail view (click + keyboard).
-  grid.querySelectorAll("[data-view]").forEach(card => {
-    const open = () => openProduct(Number(card.dataset.view));
-    card.addEventListener("click", open);
-    card.addEventListener("keydown", e => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
-    });
+// ---- Quick category navigation (icon + label row) ----
+// Built from the catalog, so a category added to a product later shows up here
+// automatically. Each tile links to that category's pre-filtered listing page.
+function renderCategoryRow() {
+  const row = $("#categoryIconRow");
+  if (!row) return;
+  const groups = window.SiteHeader.groupBy(PRODUCTS, "category");
+  if (!groups.length) {
+    row.closest(".cat-nav-section")?.setAttribute("hidden", "");
+    return;
+  }
+  row.innerHTML = groups.map(g => `
+    <a class="cat-tile" href="${window.SiteHeader.categoryUrl(g.name)}">
+      <span class="cat-tile-icon">${window.CategoryIcons.iconFor(g.name)}</span>
+      <span class="cat-tile-name">${esc(g.name)}</span>
+      <span class="cat-tile-count">${g.count} item${g.count === 1 ? "" : "s"}</span>
+    </a>`).join("");
+}
+
+// ---- Exclusive deals ----
+// Only products with an active promotional price. Hidden entirely when none are
+// discounted, so the homepage never shows an empty section.
+function renderDeals() {
+  const section = $("#deals");
+  const grid = $("#dealsGrid");
+  if (!section || !grid) return;
+  const deals = PRODUCTS
+    .filter(p => discountInfo(p))
+    .sort((a, b) => (discountInfo(b)?.pct || 0) - (discountInfo(a)?.pct || 0))
+    .slice(0, 8);
+  if (!deals.length) { section.hidden = true; return; }
+  section.hidden = false;
+  window.ProductCard.renderGrid(grid, deals, {
+    onOpen: openProduct,
+    onAdd: id => addToCart(id),
   });
+}
+
+// Footer "Belanja" column — real category links only (no dead placeholders).
+function renderFooterLinks() {
+  const wrap = $("#footerCategoryLinks");
+  if (!wrap) return;
+  wrap.innerHTML = window.SiteHeader.groupBy(PRODUCTS, "category")
+    .slice(0, 5)
+    .map(g => `<a href="${window.SiteHeader.categoryUrl(g.name)}">${esc(g.name)}</a>`)
+    .join("");
 }
 
 // ---- Product detail view ----
@@ -192,7 +157,11 @@ function renderProductDetail(product) {
       ${gallery}
     </div>
     <div class="detail-info">
-      <span class="detail-brand">${esc(product.brand)} · ${esc(product.category)}</span>
+      <span class="detail-brand">
+        <a class="detail-brand-link" href="${window.SiteHeader.brandUrl(product.brand)}">${esc(product.brand)}</a>
+        ·
+        <a class="detail-brand-link" href="${window.SiteHeader.categoryUrl(product.category)}">${esc(product.category)}</a>
+      </span>
       <h2 id="detailTitle" class="detail-name">${esc(product.name)}</h2>
       <div class="detail-rating" id="detailRating">${
         product.reviewCount > 0
@@ -420,115 +389,6 @@ function closeProduct(updateHash = true) {
   }
 }
 
-// ---- Cart logic ----
-function addToCart(id, qty = 1) {
-  const product = getProduct(id);
-  if (!product || product.stock <= 0) return;
-  const current = state.cart[id] || 0;
-  // Never let cart quantity exceed available stock.
-  state.cart[id] = Math.min(product.stock, current + qty);
-  saveCart();
-  renderCart();
-  openCart();
-}
-
-function changeQty(id, delta) {
-  const product = getProduct(id);
-  const next = (state.cart[id] || 0) + delta;
-  if (next <= 0) {
-    delete state.cart[id];
-  } else {
-    state.cart[id] = product ? Math.min(product.stock, next) : next;
-  }
-  saveCart();
-  renderCart();
-}
-
-function removeFromCart(id) {
-  delete state.cart[id];
-  saveCart();
-  renderCart();
-}
-
-function cartEntries() {
-  return Object.entries(state.cart).map(([id, qty]) => ({
-    product: getProduct(id),
-    qty,
-  })).filter(e => e.product);
-}
-
-function renderCart() {
-  const entries = cartEntries();
-  const count = entries.reduce((s, e) => s + e.qty, 0);
-  const subtotal = entries.reduce((s, e) => s + e.qty * priceOf(e.product), 0);
-
-  // Shipping: free over the threshold, otherwise a flat fee; nothing to ship if empty.
-  const shipping = subtotal === 0 ? 0 : (subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE);
-  const total = subtotal + shipping;
-
-  // Header count.
-  $("#cartCount").textContent = count;
-
-  // Summary breakdown.
-  $("#cartSubtotal").textContent = money(subtotal);
-  $("#cartShipping").textContent = shipping === 0 ? "Free" : money(shipping);
-  $("#cartTotal").textContent = money(total);
-  $("#shippingLabel").textContent =
-    subtotal > 0 && subtotal < FREE_SHIPPING_THRESHOLD
-      ? `Shipping (free over ${money(FREE_SHIPPING_THRESHOLD)})`
-      : "Shipping";
-
-  // Disable checkout on an empty cart.
-  $("#checkoutBtn").disabled = entries.length === 0;
-
-  const container = $("#cartItems");
-  if (entries.length === 0) {
-    container.innerHTML = `<p class="cart-empty">Your cart is empty.</p>`;
-    return;
-  }
-
-  container.innerHTML = entries.map(({ product, qty }) => {
-    const atMax = qty >= product.stock;
-    const unit = priceOf(product);
-    const d = discountInfo(product);
-    const priceLine = d
-      ? `<span class="cart-item-sale">${money(unit)}</span> <span class="cart-item-was">${money(product.price)}</span>`
-      : `${money(unit)}`;
-    return `
-    <div class="cart-item">
-      <div class="cart-item-media">${imageMarkup(primaryImage(product), product.emoji)}</div>
-      <div>
-        <div class="cart-item-name">${esc(product.name)}</div>
-        <div class="cart-item-price">${priceLine}</div>
-        <div class="qty">
-          <button data-dec="${product.id}" aria-label="Decrease quantity">−</button>
-          <span>${qty}</span>
-          <button data-inc="${product.id}" aria-label="Increase quantity" ${atMax ? "disabled" : ""}>+</button>
-          <button class="remove-btn" data-remove="${product.id}">Remove</button>
-        </div>
-        ${atMax ? `<div class="qty-max-note">Max stock reached</div>` : ""}
-      </div>
-      <strong>${money(unit * qty)}</strong>
-    </div>`;
-  }).join("");
-
-  container.querySelectorAll("[data-inc]").forEach(b => b.addEventListener("click", () => changeQty(Number(b.dataset.inc), 1)));
-  container.querySelectorAll("[data-dec]").forEach(b => b.addEventListener("click", () => changeQty(Number(b.dataset.dec), -1)));
-  container.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => removeFromCart(Number(b.dataset.remove))));
-}
-
-// ---- Cart drawer open/close ----
-function openCart() {
-  $("#cartDrawer").classList.add("open");
-  $("#cartDrawer").setAttribute("aria-hidden", "false");
-  $("#cartOverlay").hidden = false;
-}
-function closeCart() {
-  $("#cartDrawer").classList.remove("open");
-  $("#cartDrawer").setAttribute("aria-hidden", "true");
-  $("#cartOverlay").hidden = true;
-}
-
 // ---- Events ----
 $("#searchInput").addEventListener("input", e => {
   state.search = e.target.value.trim().toLowerCase();
@@ -538,27 +398,19 @@ $("#sortSelect").addEventListener("change", e => {
   state.sort = e.target.value;
   renderProducts();
 });
-$("#cartBtn").addEventListener("click", openCart);
-$("#cartClose").addEventListener("click", closeCart);
-$("#cartOverlay").addEventListener("click", closeCart);
 $("#detailClose").addEventListener("click", () => closeProduct());
 $("#detailOverlay").addEventListener("click", () => closeProduct());
+// Escape closes the product modal; the cart drawer handles its own Escape.
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") {
-    if ($("#detailModal").classList.contains("open")) closeProduct();
-    else closeCart();
-  }
-});
-$("#checkoutBtn").addEventListener("click", () => {
-  if (cartEntries().length === 0) return;
-  // Cart is persisted in localStorage; the checkout page reads it from there.
-  window.location.href = "checkout.html";
+  if (e.key === "Escape" && $("#detailModal").classList.contains("open")) closeProduct();
 });
 
 // Open a product directly from a #product/<id> URL (shareable / refresh-safe).
+// #cart opens the cart drawer — the listing pages link here for the full cart.
 function handleHash() {
   const m = location.hash.match(/^#product\/(\d+)$/);
-  if (m) openProduct(Number(m[1]), false);
+  if (m) { openProduct(Number(m[1]), false); return; }
+  if (location.hash === "#cart") window.CartUI.open();
 }
 window.addEventListener("hashchange", handleHash);
 
@@ -571,13 +423,19 @@ async function init() {
   empty.hidden = true;
   grid.innerHTML = `<p class="grid-status">Loading products…</p>`;
 
-  // Cart count reflects persisted cart immediately.
-  renderCart();
+  // Cart drawer: wire controls and reflect the persisted cart immediately.
+  window.CartUI.init({ getProduct });
 
   try {
     await loadProducts();
+    window.SiteHeader.init(PRODUCTS);
+    renderCategoryRow();
+    renderDeals();
+    renderFooterLinks();
     renderFilters();
     renderProducts();
+    // Cart lines need the freshly loaded catalog (names, prices, stock).
+    window.CartUI.render();
     handleHash();
   } catch (err) {
     console.error(err);
