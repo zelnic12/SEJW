@@ -90,6 +90,13 @@ export async function getProducts() {
   return rows.map(mapProduct);
 }
 
+// Lower-cased product names, for cheap duplicate detection during a bulk import
+// (the full getProducts() join is far too heavy to run per row).
+export async function listProductNamesLower() {
+  const { rows } = await query("SELECT lower(name) AS name FROM products");
+  return rows.map(r => r.name);
+}
+
 export async function getProduct(id) {
   const { rows } = await query(`${PRODUCT_SELECT} WHERE p.id = $1`, [Number(id)]);
   return mapProduct(rows[0]);
