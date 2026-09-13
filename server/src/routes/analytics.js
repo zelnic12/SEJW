@@ -43,7 +43,11 @@ router.get("/timeseries", async (req, res, next) => {
 // GET /api/analytics/low-stock?threshold=5
 router.get("/low-stock", async (req, res, next) => {
   try {
-    const threshold = Math.max(0, Number(req.query.threshold) || 5);
+    // An explicit threshold=0 is a legitimate request ("only sold-out products")
+    // — don't let `|| 5` swallow it. Missing/garbage falls back to 5.
+    const raw = req.query.threshold;
+    const parsed = raw === undefined || raw === "" ? 5 : Number(raw);
+    const threshold = Number.isFinite(parsed) ? Math.max(0, parsed) : 5;
     res.json(await store.getLowStock(threshold));
   } catch (err) { next(err); }
 });

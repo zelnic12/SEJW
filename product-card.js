@@ -37,6 +37,21 @@
     return (p.images && p.images.length) ? p.images[0].url : `emoji:${p.emoji}`;
   }
 
+  // Sold out — stock is authoritative and comes straight from the API.
+  const isOutOfStock = p => !(Number(p?.stock) > 0);
+
+  /**
+   * Move sold-out products to the end of a list, whatever the current sort is.
+   *
+   * Relies on Array#sort being stable (guaranteed since ES2019), so the order the
+   * caller already established survives *within* each group: apply the shopper's
+   * chosen sort first, then this, and you get "in stock, sorted" followed by
+   * "sold out, sorted". Returns a new array; the input is left alone.
+   */
+  function outOfStockLast(list) {
+    return [...list].sort((a, b) => Number(isOutOfStock(a)) - Number(isOutOfStock(b)));
+  }
+
   // Effective (charged) price — promotional price when on sale, else regular.
   // Mirrors the server's authoritative rule; used for display math only.
   function priceOf(p) {
@@ -126,5 +141,6 @@
 
   window.ProductCard = {
     money, esc, discountInfo, imageMarkup, primaryImage, priceOf, ratingMarkup, cardHTML, renderGrid,
+    isOutOfStock, outOfStockLast,
   };
 })();

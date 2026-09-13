@@ -588,3 +588,29 @@ button.admin-back {
 .imp-checkbox small { color: var(--text-secondary); font-size: .78rem; }
 
 .imp-actions { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-top: 1.2rem; }
+
+
+/* ---- Products: All / Out of stock tabs ---- */
+.prod-tabs { display: flex; gap: .3rem; padding: 0 1.1rem; border-bottom: 1px solid var(--border); }
+.prod-tab {
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: .6rem .8rem; font: inherit; font-size: .9rem; font-weight: 600;
+  color: var(--text-secondary); cursor: pointer;
+  transition: color .15s ease, border-color .15s ease;
+}
+.prod-tab:hover { color: var(--primary); }
+.prod-tab.active { color: var(--text-primary); border-bottom-color: var(--primary); }
+.prod-tab-count {
+  font-size: .74rem; font-weight: 700; padding: .1rem .4rem; border-radius: 999px;
+  background: var(--surface-secondary); color: var(--text-secondary); border: 1px solid var(--border);
+}
+.prod-tab-count.warn { background: #fdecec; color: var(--danger); border-color: #f7cccc; }
+.prod-tabs + .panel-note { padding-top: .9rem; }
+
+/* Sidebar count badge (out-of-stock items needing attention) */
+.nav-badge {
+  margin-left: auto; font-size: .7rem; font-weight: 700; line-height: 1;
+  padding: .2rem .4rem; border-radius: 999px;
+  background: var(--danger); color: #fff;
+}

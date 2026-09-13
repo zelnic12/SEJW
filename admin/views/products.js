@@ -5,7 +5,11 @@ import { dataTable } from "../components/dataTable.js";
 import { openModal, confirmDialog } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 
-async function reload(root) { return renderProducts(root); }
+// Which tab the Products view is showing: "all" or "out" (stock = 0). Module
+// scope so reload() after an edit/delete/restock keeps you on the same tab.
+let currentStockFilter = "all";
+
+async function reload(root) { return renderProducts(root, { stockFilter: currentStockFilter }); }
 
 // Product add/edit form inside a modal.
 function productForm(root, product = null) {
@@ -304,7 +308,20 @@ function matchesQuery(p, q) {
   return hay.includes(q);
 }
 
-export async function renderProducts(root) {
+const isOutOfStock = p => Number(p.stock) === 0;
+
+/**
+ * Products list. Same table, columns and row actions for both tabs — the
+ * out-of-stock tab is the identical view scoped to `stock = 0`.
+ *
+ * @param {Element} root
+ * @param {object} options
+ * @param {"all"|"out"} [options.stockFilter]
+ */
+export async function renderProducts(root, { stockFilter = "all" } = {}) {
+  currentStockFilter = stockFilter === "out" ? "out" : "all";
+  const outTab = currentStockFilter === "out";
+
   root.innerHTML = `<p class="admin-status">Loading products…</p>`;
   let products;
   try {
@@ -314,26 +331,69 @@ export async function renderProducts(root) {
     return;
   }
 
+  const outOfStock = products.filter(isOutOfStock);
+  // Let the shell update the sidebar badge without fetching anything itself.
+  document.dispatchEvent(new CustomEvent("admin:stock-counts", {
+    detail: { outOfStock: outOfStock.length, total: products.length },
+  }));
+
+  // Everything below works off `scope`, so the tab is the only difference.
+  const scope = outTab ? outOfStock : products;
   const byId = new Map(products.map(p => [String(p.id), p]));
+
+  const headingFor = (shown, total) => outTab
+    ? `Out of stock (${shown}${shown !== total ? ` of ${total}` : ""})`
+    : `Products (${shown}${shown !== total ? ` of ${total}` : ""})`;
+
+  const emptyFor = q => {
+    if (q) return `No ${outTab ? "out-of-stock products" : "products"} match “${esc(q)}”.`;
+    return outTab
+      ? "Nothing is out of stock — every product has inventory. 🎉"
+      : "No products yet.";
+  };
 
   root.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <h2 id="prodHeading">Products (${products.length})</h2>
+        <h2 id="prodHeading">${headingFor(scope.length, scope.length)}</h2>
         <div class="panel-head-actions">
           <button class="btn btn-secondary btn-sm" id="importProductsBtn">⬆️ Import from Excel/CSV</button>
           <button class="btn btn-primary btn-sm" id="addProductBtn">+ Add product</button>
         </div>
       </div>
+
+      <div class="prod-tabs" role="tablist" aria-label="Product stock filter">
+        <button class="prod-tab ${outTab ? "" : "active"}" data-tab="all" role="tab" aria-selected="${!outTab}">
+          All products <span class="prod-tab-count">${products.length}</span>
+        </button>
+        <button class="prod-tab ${outTab ? "active" : ""}" data-tab="out" role="tab" aria-selected="${outTab}">
+          Out of stock <span class="prod-tab-count ${outOfStock.length ? "warn" : ""}">${outOfStock.length}</span>
+        </button>
+      </div>
+
+      ${outTab && outOfStock.length
+        ? `<p class="panel-note">These products still show on the storefront (after everything in stock) with a “Sold out” button. Use <strong>Stock</strong> on a row to restock one.</p>`
+        : ""}
+
       <div class="table-toolbar">
         <div class="search-field">
           <span class="search-field-icon" aria-hidden="true">🔍</span>
           <input type="search" id="prodSearch" class="search-field-input"
-                 placeholder="Search by name, brand or category…" autocomplete="off" aria-label="Search products" />
+                 placeholder="${outTab ? "Search out-of-stock products…" : "Search by name, brand or category…"}"
+                 autocomplete="off" aria-label="Search products" />
         </div>
       </div>
-      <div id="prodTableWrap">${dataTable({ columns: PRODUCT_COLUMNS, rows: products, rowKey: r => r.id, empty: "No products yet." })}</div>
+      <div id="prodTableWrap">${dataTable({ columns: PRODUCT_COLUMNS, rows: scope, rowKey: r => r.id, empty: emptyFor("") })}</div>
     </div>`;
+
+  // Tabs are real routes, so a restock/refresh keeps you where you were.
+  root.querySelectorAll(".prod-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.tab === "out" ? "#out-of-stock" : "#products";
+      if (location.hash === target) return;
+      location.hash = target;
+    });
+  });
 
   const tableWrap = root.querySelector("#prodTableWrap");
   const heading = root.querySelector("#prodHeading");
@@ -365,17 +425,16 @@ export async function renderProducts(root) {
   }
 
   // Instant, client-side filtering (the full catalog is already loaded).
+  // Searching stays inside the active tab's scope.
   function applyFilter() {
     const q = searchInput.value.trim().toLowerCase();
-    const filtered = products.filter(p => matchesQuery(p, q));
-    heading.textContent = q
-      ? `Products (${filtered.length} of ${products.length})`
-      : `Products (${products.length})`;
+    const filtered = scope.filter(p => matchesQuery(p, q));
+    heading.textContent = headingFor(filtered.length, scope.length);
     tableWrap.innerHTML = dataTable({
       columns: PRODUCT_COLUMNS,
       rows: filtered,
       rowKey: r => r.id,
-      empty: q ? `No products match “${esc(searchInput.value.trim())}”.` : "No products yet.",
+      empty: emptyFor(searchInput.value.trim()),
     });
     wireRowActions();
   }

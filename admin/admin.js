@@ -17,6 +17,8 @@ import { toast } from "./components/toast.js";
 const VIEWS = {
   overview: { title: "Overview", render: renderOverview },
   products: { title: "Products", render: renderProducts },
+  // Same view, scoped to stock = 0 — a real route so it's linkable/refreshable.
+  "out-of-stock": { title: "Out of stock", render: root => renderProducts(root, { stockFilter: "out" }) },
   import:   { title: "Import products", render: renderImport },
   orders:   { title: "Orders", render: renderOrders },
   promos:   { title: "Promo codes", render: renderPromos },
@@ -84,7 +86,30 @@ function enterDashboard() {
   loginHost.innerHTML = "";
   layout.hidden = false;
   show(location.hash.replace("#", "") || "overview");
+  refreshOutOfStockBadge();
 }
+
+// ---- Out-of-stock badge in the sidebar ----
+// Kept current from two sides: fetched once on entry (so the count is right
+// before you've opened any product page) and updated from the event the products
+// view fires whenever it loads, so a restock is reflected immediately.
+function setOutOfStockBadge(count) {
+  const badge = document.getElementById("outOfStockBadge");
+  if (!badge) return;
+  badge.textContent = String(count);
+  badge.hidden = count === 0;
+}
+
+async function refreshOutOfStockBadge() {
+  try {
+    // threshold=0 → exactly the sold-out products (stock can't go negative).
+    setOutOfStockBadge((await api.lowStock(0)).length);
+  } catch {
+    /* Non-critical: leave whatever the badge already shows. */
+  }
+}
+
+document.addEventListener("admin:stock-counts", e => setOutOfStockBadge(e.detail.outOfStock));
 
 // When any API call gets a 401, drop back to the login screen.
 setUnauthorizedHandler(() => {
