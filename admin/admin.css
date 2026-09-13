@@ -399,3 +399,22 @@ button.admin-back {
 .fulfil-pill.delivery { background: var(--primary-light); color: var(--primary); }
 .fulfil-pill.pickup { background: #eef1f6; color: #55617a; }
 .stage-pill { font-size: .68rem; font-weight: 600; padding: .12rem .45rem; border-radius: 999px; background: var(--surface-secondary); color: var(--text-secondary); }
+
+
+/* ---- Homepage banners view ---- */
+.panel-note { color: var(--text-secondary); font-size: .85rem; padding: 0 1.1rem .8rem; }
+.muted-sm { display: block; color: var(--text-secondary); font-size: .78rem; margin-top: .15rem; }
+.banner-thumb {
+  display: inline-block; width: 84px; height: 48px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--surface-secondary);
+}
+.banner-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.banner-swatch { display: block; width: 100%; height: 100%; }
+.banner-image-row { display: flex; align-items: flex-start; gap: .8rem; }
+.banner-image-inputs { display: flex; flex-direction: column; gap: .4rem; flex: 1; min-width: 0; }
+.form-hint { color: var(--text-secondary); font-size: .76rem; margin-top: .4rem; }
+.order-btns { display: flex; gap: .25rem; }
+.order-btns .icon-action { padding: .2rem .45rem; }
+.icon-action:disabled { opacity: .4; cursor: not-allowed; }
+.icon-action:disabled:hover { border-color: var(--border); color: var(--text-secondary); }

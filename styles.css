@@ -127,30 +127,8 @@ img { max-width: 100%; display: block; }
   display: inline-flex; align-items: center; justify-content: center; padding: 0 5px;
 }
 
-/* Hero — light surface with red accents */
-.hero {
-  padding: 3rem 0; margin-top: 1.5rem; overflow: hidden;
-  background: var(--surface-secondary);
-  border: 1px solid var(--border); border-radius: var(--radius);
-}
-.hero > .container { width: 100%; }
-.hero-inner { display: grid; grid-template-columns: 1.1fr .9fr; gap: 2rem; align-items: center; padding: .5rem 2.2rem; }
-.hero-eyebrow {
-  display: inline-block; color: var(--primary); font-weight: 700; font-size: .8rem;
-  text-transform: uppercase; letter-spacing: .06em;
-  background: var(--primary-light); padding: .3rem .7rem; border-radius: 999px;
-}
-.hero h1 { font-size: clamp(2rem, 4.5vw, 3rem); line-height: 1.1; margin: .8rem 0 .6rem; font-weight: 800; color: var(--text-primary); letter-spacing: -.02em; }
-.hero-sub { color: var(--text-secondary); font-size: 1.08rem; max-width: 46ch; }
-.hero-cta { display: flex; gap: .8rem; margin: 1.6rem 0 1.2rem; }
-.hero-badges { display: flex; flex-wrap: wrap; gap: 1.2rem; list-style: none; color: var(--text-secondary); font-size: .9rem; font-weight: 500; }
-
-.hero-art { position: relative; min-height: 240px; display: grid; place-items: center; }
-.hero-glow {
-  position: absolute; inset: 0; margin: auto; width: 300px; height: 300px;
-  background: radial-gradient(circle, var(--primary-light), transparent 70%);
-}
-.hero-emoji { position: relative; font-size: clamp(3rem, 9vw, 5.5rem); letter-spacing: .3rem; }
+/* (The old static hero was replaced by the admin-managed banner carousel —
+   see "Homepage: banner carousel" further down.) */
 
 /* Catalog */
 .catalog-section { padding: 2rem 0 4rem; }
@@ -277,13 +255,10 @@ img { max-width: 100%; display: block; }
 
 /* Responsive */
 @media (max-width: 820px) {
-  .hero-inner { grid-template-columns: 1fr; }
-  .hero-art { min-height: 160px; }
   .header-inner { flex-wrap: wrap; }
   .search-wrap { order: 3; max-width: none; flex-basis: 100%; }
 }
 @media (max-width: 480px) {
-  .hero-cta { flex-direction: column; }
   .btn { width: 100%; }
 }
 
@@ -635,3 +610,236 @@ img { max-width: 100%; display: block; }
 .promo-applied-text strong { color: var(--success); }
 .promo-error { color: var(--danger); font-size: .82rem; margin-top: .5rem; }
 .summary-row #sumDiscount, #sumDiscount { color: var(--success); }
+
+
+/* ============================================================
+ * Homepage redesign: header menu, banner carousel, category
+ * navigation, deals section, and the category/brand listing pages.
+ * ============================================================ */
+
+/* `hidden` must win over the display rules below (empty carousel, no deals…). */
+[hidden] { display: none !important; }
+
+/* ---- Header: Categories mega-menu ---- */
+.cat-menu { position: relative; flex-shrink: 0; }
+.cat-menu-btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .6rem .9rem; border-radius: var(--radius-sm);
+  background: var(--primary); border: 1px solid var(--primary); color: #fff;
+  font: inherit; font-weight: 600; font-size: .92rem; cursor: pointer;
+  transition: background .15s ease;
+}
+.cat-menu-btn:hover { background: var(--primary-dark); }
+.cat-menu-btn:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.cat-menu-bars { display: inline-flex; flex-direction: column; gap: 3px; }
+.cat-menu-bars span { display: block; width: 14px; height: 2px; background: currentColor; border-radius: 2px; }
+.cat-menu-chevron { width: 14px; height: 14px; transition: transform .18s ease; }
+.cat-menu.open .cat-menu-chevron { transform: rotate(180deg); }
+
+.mega-menu {
+  position: absolute; top: calc(100% + .55rem); left: 0; z-index: 60;
+  display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, .8fr);
+  gap: 1.5rem; width: min(720px, 88vw); padding: 1.2rem 1.3rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+}
+.mega-title {
+  font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-secondary); margin-bottom: .8rem;
+}
+.mega-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .3rem; }
+.mega-item {
+  display: flex; align-items: center; gap: .65rem;
+  padding: .5rem .6rem; border-radius: var(--radius-sm);
+  transition: background .15s ease, color .15s ease;
+}
+.mega-item:hover, .mega-item.is-active { background: var(--primary-light); color: var(--primary); }
+.mega-item-icon {
+  display: inline-grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0;
+  border-radius: var(--radius-sm); background: var(--surface-secondary); color: var(--primary);
+}
+.mega-item:hover .mega-item-icon, .mega-item.is-active .mega-item-icon { background: #fff; }
+.mega-item-text { display: flex; flex-direction: column; min-width: 0; }
+.mega-item-name { font-weight: 600; font-size: .92rem; }
+.mega-item-count { font-size: .75rem; color: var(--text-secondary); }
+.mega-side { border-left: 1px solid var(--border); padding-left: 1.3rem; }
+.mega-brands { display: flex; flex-wrap: wrap; gap: .4rem; }
+.mega-brand {
+  padding: .35rem .7rem; border: 1px solid var(--border); border-radius: 999px;
+  font-size: .82rem; font-weight: 500; color: var(--text-secondary);
+  transition: all .15s ease;
+}
+.mega-brand:hover, .mega-brand.is-active { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+
+.cat-icon { width: 22px; height: 22px; }
+
+/* Admin/account link in the header */
+.header-actions { margin-left: auto; display: flex; align-items: center; gap: .6rem; }
+.header-link {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .6rem .8rem; border-radius: var(--radius-sm);
+  color: var(--text-secondary); font-size: .9rem; font-weight: 600;
+  border: 1px solid transparent; transition: all .15s ease;
+}
+.header-link svg { width: 18px; height: 18px; }
+.header-link:hover { color: var(--primary); border-color: var(--border); }
+
+/* ---- Header: slim secondary row ---- */
+.header-sub { background: var(--surface-secondary); border-top: 1px solid var(--border); }
+.header-sub-inner {
+  display: flex; align-items: center; gap: .15rem;
+  overflow-x: auto; scrollbar-width: none;
+}
+.header-sub-inner::-webkit-scrollbar { display: none; }
+.sub-links { display: contents; }
+.sub-link {
+  padding: .55rem .7rem; font-size: .85rem; font-weight: 500;
+  color: var(--text-secondary); white-space: nowrap;
+  border-bottom: 2px solid transparent; transition: color .15s ease, border-color .15s ease;
+}
+.sub-link:hover { color: var(--primary); }
+.sub-link.is-active { color: var(--text-primary); font-weight: 700; border-bottom-color: var(--primary); }
+.sub-link-accent { margin-left: auto; color: var(--primary); font-weight: 700; }
+
+/* ---- Homepage: banner carousel ---- */
+.banner-carousel {
+  position: relative; margin-top: 1.25rem;
+  border-radius: var(--radius); overflow: hidden; background: var(--surface-secondary);
+}
+.banner-viewport { position: relative; min-height: clamp(240px, 30vw, 360px); }
+.banner-slide {
+  position: absolute; inset: 0; display: grid; align-items: center;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  opacity: 0; visibility: hidden; transition: opacity .5s ease, visibility .5s ease;
+}
+.banner-slide.is-active { opacity: 1; visibility: visible; }
+/* Dark scrim so headline text stays readable over any photo. */
+.banner-slide.has-image::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(0,0,0,.66) 0%, rgba(0,0,0,.35) 55%, rgba(0,0,0,.1) 100%);
+}
+.banner-slide-inner { position: relative; z-index: 1; color: #fff; padding: 2.5rem 0; }
+/* Copy sits left-aligned inside the page gutter, not centred in the slide. */
+.banner-slide-copy { max-width: 620px; }
+.banner-headline {
+  font-size: clamp(1.6rem, 3.4vw, 2.6rem); line-height: 1.12; font-weight: 800;
+  letter-spacing: -.02em; color: #fff;
+}
+.banner-subtext { margin-top: .7rem; font-size: clamp(.95rem, 1.4vw, 1.1rem); color: rgba(255,255,255,.9); max-width: 48ch; }
+.banner-cta { margin-top: 1.4rem; }
+.banner-cta-static { display: inline-block; margin-top: 1.4rem; font-weight: 700; }
+.btn-light { background: #fff; color: var(--primary); }
+.btn-light:hover { background: var(--primary-light); }
+
+.banner-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 2;
+  display: grid; place-items: center; width: 40px; height: 40px;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: rgba(255,255,255,.85); color: var(--text-primary);
+  transition: background .15s ease;
+}
+.banner-nav:hover { background: #fff; }
+.banner-nav:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.banner-nav svg { width: 20px; height: 20px; }
+.banner-nav.prev { left: .8rem; }
+.banner-nav.next { right: .8rem; }
+
+.banner-dots {
+  position: absolute; bottom: .9rem; left: 0; right: 0; z-index: 2;
+  display: flex; justify-content: center; gap: .4rem;
+}
+.banner-dot {
+  width: 9px; height: 9px; padding: 0; border: none; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,.55); transition: all .18s ease;
+}
+.banner-dot.is-active { background: #fff; width: 26px; }
+.banner-dot:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+
+/* ---- Service promises strip ---- */
+.trust-strip {
+  display: flex; flex-wrap: wrap; gap: 1.5rem; list-style: none;
+  margin-top: 1rem; padding: .9rem 1.1rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text-secondary); font-size: .88rem; font-weight: 500;
+}
+
+/* ---- Homepage: quick category navigation ---- */
+.cat-nav-section { margin-top: 2.2rem; }
+.cat-nav-head, .deals-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;
+}
+.cat-nav-head h2, .deals-head h2 { font-size: 1.4rem; font-weight: 800; letter-spacing: -.01em; }
+.link-more { color: var(--primary); font-weight: 600; font-size: .9rem; }
+.link-more:hover { text-decoration: underline; }
+.cat-nav-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(118px, 1fr);
+  gap: .7rem; overflow-x: auto; padding-bottom: .3rem; scrollbar-width: thin;
+}
+.cat-tile {
+  display: flex; flex-direction: column; align-items: center; gap: .45rem;
+  padding: 1rem .6rem; text-align: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.cat-tile:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow); }
+.cat-tile-icon {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+  background: var(--primary-light); color: var(--primary);
+}
+.cat-tile-icon .cat-icon { width: 24px; height: 24px; }
+.cat-tile-name { font-weight: 600; font-size: .9rem; }
+.cat-tile-count { font-size: .74rem; color: var(--text-secondary); }
+
+/* ---- Homepage: exclusive deals ---- */
+.deals-section {
+  margin-top: 2.5rem; padding: 1.4rem 1.4rem 1.6rem;
+  background: var(--primary-light); border-radius: var(--radius);
+}
+.deals-sub { color: var(--text-secondary); font-size: .9rem; margin-top: .2rem; }
+
+/* ---- Category / brand listing pages ---- */
+.listing-page { padding: 1.4rem 0 4rem; }
+.breadcrumb { display: flex; align-items: center; gap: .45rem; font-size: .85rem; color: var(--text-secondary); flex-wrap: wrap; }
+.breadcrumb a:hover { color: var(--primary); }
+.breadcrumb-current { color: var(--text-primary); font-weight: 600; }
+.listing-head { display: flex; align-items: center; gap: 1rem; margin: 1rem 0 1.6rem; flex-wrap: wrap; }
+.listing-icon {
+  display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%;
+  background: var(--primary-light); color: var(--primary); flex-shrink: 0;
+}
+.listing-icon .cat-icon { width: 26px; height: 26px; }
+.listing-head h1 { font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 800; letter-spacing: -.02em; }
+.listing-count { color: var(--text-secondary); font-size: .9rem; margin-top: .15rem; }
+.listing-back { margin-left: auto; }
+.btn-sm { padding: .5rem .9rem; font-size: .85rem; }
+.listing-controls { margin-bottom: 1.3rem; }
+
+/* Clickable brand / category on the product detail view */
+.detail-brand-link { color: var(--primary); font-weight: 700; }
+.detail-brand-link:hover { text-decoration: underline; }
+
+/* Footer category links (rendered into a span) */
+.footer-links { display: flex; flex-direction: column; }
+
+/* ---- Responsive ---- */
+@media (max-width: 900px) {
+  .mega-menu { grid-template-columns: 1fr; width: min(420px, 92vw); }
+  .mega-side { border-left: none; border-top: 1px solid var(--border); padding-left: 0; padding-top: 1rem; }
+}
+@media (max-width: 820px) {
+  .cat-menu { order: 2; }
+  .header-actions { order: 1; }
+  .header-link span { display: none; }
+  .banner-slide-inner { padding: 2rem 0; }
+  .banner-nav { width: 34px; height: 34px; }
+  .listing-back { margin-left: 0; width: auto; }
+}
+@media (max-width: 480px) {
+  .trust-strip { gap: .6rem 1.2rem; font-size: .82rem; }
+  .cat-nav-row { grid-auto-columns: minmax(104px, 1fr); }
+  .deals-section { padding: 1.1rem 1rem 1.3rem; }
+  .banner-dots { bottom: .6rem; }
+  /* Keep carousel arrows circular even though .btn goes full-width on mobile. */
+  .banner-cta { width: auto; }
+}

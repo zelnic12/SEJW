@@ -902,3 +902,102 @@ export async function updatePromoCode(id, data) {
   const { rows } = await query(`UPDATE promo_codes SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`, values);
   return rows[0] ? mapPromo(rows[0]) : null;
 }
+
+
+// ============================================================================
+// Homepage hero banners (carousel slides)
+// ============================================================================
+function mapBanner(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    imageUrl: row.image_url || null,
+    backgroundColor: row.background_color || null,
+    headline: row.headline,
+    subtext: row.subtext || "",
+    ctaText: row.cta_text || "",
+    ctaLink: row.cta_link || "",
+    position: Number(row.position),
+    isActive: row.is_active,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+// Public storefront view: only active slides, in display order.
+export async function listActiveBanners() {
+  const { rows } = await query(
+    "SELECT * FROM banners WHERE is_active = true ORDER BY position, id"
+  );
+  return rows.map(mapBanner);
+}
+
+// Admin view: every slide, active or not, in display order.
+export async function listBanners() {
+  const { rows } = await query("SELECT * FROM banners ORDER BY position, id");
+  return rows.map(mapBanner);
+}
+
+export async function getBanner(id) {
+  const { rows } = await query("SELECT * FROM banners WHERE id = $1", [Number(id)]);
+  return rows[0] ? mapBanner(rows[0]) : null;
+}
+
+// New slides go to the end of the list unless a position is given.
+export async function createBanner(data) {
+  const { rows } = await query(
+    `INSERT INTO banners (image_url, background_color, headline, subtext, cta_text, cta_link, position, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,
+             COALESCE($7, (SELECT COALESCE(MAX(position), -1) + 1 FROM banners)),
+             $8)
+     RETURNING *`,
+    [data.imageUrl ?? null, data.backgroundColor ?? null, data.headline,
+     data.subtext ?? null, data.ctaText ?? null, data.ctaLink ?? null,
+     data.position ?? null, data.isActive ?? true]
+  );
+  return mapBanner(rows[0]);
+}
+
+// Partial update — only the provided keys are written.
+export async function updateBanner(id, data) {
+  const map = {
+    imageUrl: "image_url", backgroundColor: "background_color", headline: "headline",
+    subtext: "subtext", ctaText: "cta_text", ctaLink: "cta_link",
+    position: "position", isActive: "is_active",
+  };
+  const sets = []; const values = []; let i = 1;
+  for (const [k, col] of Object.entries(map)) {
+    if (data[k] !== undefined) { sets.push(`${col} = $${i++}`); values.push(data[k]); }
+  }
+  if (sets.length === 0) return getBanner(id);
+  values.push(Number(id));
+  const { rows } = await query(
+    `UPDATE banners SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`, values
+  );
+  return rows[0] ? mapBanner(rows[0]) : null;
+}
+
+// Returns the deleted row (so the route can clean up an uploaded file), or null.
+export async function deleteBanner(id) {
+  const { rows } = await query("DELETE FROM banners WHERE id = $1 RETURNING *", [Number(id)]);
+  return rows[0] ? mapBanner(rows[0]) : null;
+}
+
+// Rewrite positions from an ordered list of ids, in one transaction.
+// Ids not present in the list keep their relative order after the listed ones.
+export async function reorderBanners(orderedIds) {
+  await withTransaction(async (client) => {
+    let pos = 0;
+    for (const id of orderedIds) {
+      await client.query("UPDATE banners SET position = $1 WHERE id = $2", [pos++, Number(id)]);
+    }
+    // Push anything not mentioned to the end, preserving its previous order.
+    const { rows } = await client.query(
+      "SELECT id FROM banners WHERE NOT (id = ANY($1::int[])) ORDER BY position, id",
+      [orderedIds.map(Number)]
+    );
+    for (const row of rows) {
+      await client.query("UPDATE banners SET position = $1 WHERE id = $2", [pos++, row.id]);
+    }
+  });
+  return listBanners();
+}

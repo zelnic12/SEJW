@@ -100,6 +100,18 @@ export const api = {
   getConversation: id => request(`/admin/chat/conversations/${id}/messages`),
   replyConversation: (id, body) => request(`/admin/chat/conversations/${id}/messages`, { method: "POST", body: { body } }),
 
+  // Homepage banners (admin)
+  listBanners: () => request("/admin/banners"),
+  createBanner: data => request("/admin/banners", { method: "POST", body: data }),
+  updateBanner: (id, data) => request(`/admin/banners/${id}`, { method: "PUT", body: data }),
+  deleteBanner: id => request(`/admin/banners/${id}`, { method: "DELETE" }),
+  reorderBanners: order => request("/admin/banners/reorder", { method: "PUT", body: { order } }),
+  uploadBannerImage: file => {
+    const fd = new FormData();
+    fd.append("image", file);
+    return uploadForm("/admin/banners/upload", fd);
+  },
+
   // Promo codes (admin)
   listPromoCodes: () => request("/admin/promo-codes"),
   createPromoCode: data => request("/admin/promo-codes", { method: "POST", body: data }),

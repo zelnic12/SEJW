@@ -38,6 +38,44 @@ export async function seed() {
     await client.query(
       "SELECT setval(pg_get_serial_sequence('products','id'), (SELECT MAX(id) FROM products))"
     );
+
+    // Demo homepage carousel slides — inserted ONLY when the table is empty so
+    // re-seeding never clobbers (or resurrects) admin-managed banners.
+    const { rows: bannerCount } = await client.query("SELECT COUNT(*)::int AS n FROM banners");
+    if (bannerCount[0].n === 0) {
+      const DEMO_BANNERS = [
+        {
+          headline: "Promo laptop pilihan",
+          subtext: "Hemat sampai 20% untuk laptop kerja & kuliah. Garansi resmi, stok terbatas.",
+          ctaText: "Lihat laptop",
+          ctaLink: "category.html?name=Laptops",
+          backgroundColor: "#C8102E",
+        },
+        {
+          headline: "Audio jernih, harga bersahabat",
+          subtext: "Headphone dan speaker dari brand terpercaya, siap kirim hari ini.",
+          ctaText: "Belanja audio",
+          ctaLink: "category.html?name=Audio",
+          backgroundColor: "#1F2937",
+        },
+        {
+          headline: "Gratis pengiriman se-Indonesia",
+          subtext: "Untuk semua pesanan di atas nilai minimum. Produk original, garansi resmi.",
+          ctaText: "Mulai belanja",
+          ctaLink: "#catalog",
+          backgroundColor: "#0F766E",
+        },
+      ];
+      let position = 0;
+      for (const b of DEMO_BANNERS) {
+        await client.query(
+          `INSERT INTO banners (headline, subtext, cta_text, cta_link, background_color, position, is_active)
+           VALUES ($1,$2,$3,$4,$5,$6,true)`,
+          [b.headline, b.subtext, b.ctaText, b.ctaLink, b.backgroundColor, position++]
+        );
+      }
+      console.log(`✓ Seeded ${DEMO_BANNERS.length} homepage banners`);
+    }
   });
 
   console.log(`✓ Seeded ${SEED_PRODUCTS.length} products (+ images)`);
