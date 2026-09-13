@@ -630,11 +630,12 @@ button.admin-back {
   padding: .9rem; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface);
 }
-/* Mirrors the storefront tile: circular, cropped, photo replaces the glyph. */
+/* Mirrors the storefront tile: rounded square, cropped, photo replaces the glyph. */
 .cat-admin-icon {
   grid-area: icon;
   position: relative; overflow: hidden;
-  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  display: grid; place-items: center; width: 56px; height: 56px;
+  border-radius: var(--radius-sm);
   background: var(--primary-light); color: var(--primary);
 }
 .cat-admin-icon.has-photo { background: var(--surface-secondary); }
