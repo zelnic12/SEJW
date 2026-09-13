@@ -138,7 +138,9 @@
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 1.2rem 1.4rem; border-bottom: 1px solid var(--border); }
 .modal-head h3 { font-size: 1.15rem; }
 .modal-body { padding: 1.4rem; }
-.modal-foot { display: flex; justify-content: flex-end; gap: .7rem; padding: 1rem 1.4rem; border-top: 1px solid var(--border); }
+.modal-foot { display: flex; justify-content: flex-end; gap: .7rem; padding: 1rem 1.4rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+/* Wider variant for detail views that show a table + side-by-side blocks. */
+.modal.modal-lg { width: min(760px, 100%); }
 
 /* ---- Form ---- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -324,37 +326,18 @@ button.admin-back {
 }
 
 
-/* ---- Orders Kanban board ---- */
-.orders-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-.orders-head h2 { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); }
+/* ---- Orders: one status per tab ---- */
 .orders-head-hint { font-size: .82rem; color: var(--text-secondary); }
 
-.orders-board {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem;
-  align-items: start;
+/* The tab bar starts flush under the panel head; the list gets its own spacing. */
+.orders-panel .admin-tabs { margin-bottom: 0; }
+.orders-body { padding-top: 1rem; }
+
+/* Cards fill the width the board used to split into columns. */
+.order-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: .8rem; align-items: start;
 }
-.board-col {
-  background: var(--surface-secondary); border: 1px solid var(--border);
-  border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden;
-}
-.board-col-head {
-  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
-  padding: .7rem .9rem; font-weight: 700; font-size: .85rem; color: var(--text-primary);
-  background: var(--surface); border-bottom: 2px solid var(--border);
-}
-/* Colored top accent per column, aligned with the status badge colors. */
-.board-col-head.status-needs_shipping { border-bottom-color: #f0b429; }
-.board-col-head.status-shipped { border-bottom-color: var(--primary); }
-.board-col-head.status-completed { border-bottom-color: var(--success); }
-.board-col-head.status-cancelled { border-bottom-color: var(--danger); }
-.board-col-title { text-transform: uppercase; letter-spacing: .03em; }
-.board-col-count {
-  background: var(--surface-secondary); color: var(--text-secondary);
-  min-width: 22px; height: 22px; border-radius: 999px; padding: 0 7px;
-  display: inline-grid; place-items: center; font-size: .78rem; font-weight: 700;
-}
-.board-col-body { padding: .7rem; display: flex; flex-direction: column; gap: .7rem; min-height: 60px; }
-.board-empty { color: var(--text-secondary); font-size: .82rem; text-align: center; padding: 1.2rem 0; }
 
 .order-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -371,11 +354,8 @@ button.admin-back {
 .order-card-actions { display: flex; gap: .4rem; margin-top: .7rem; flex-wrap: wrap; }
 .btn-xs { padding: .3rem .6rem; font-size: .75rem; border-radius: var(--radius-sm); }
 
-@media (max-width: 1000px) {
-  .orders-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 560px) {
-  .orders-board { grid-template-columns: 1fr; }
+  .order-list { grid-template-columns: 1fr; }
 }
 
 
@@ -392,7 +372,6 @@ button.admin-back {
 
 /* Awaiting-payment status (kept out of the fulfilment pipeline until paid) */
 .badge.awaiting_payment { background: #eef1f6; color: #55617a; }
-.board-col-head.status-awaiting_payment { border-bottom-color: #8a94a6; }
 
 
 /* Read-only review summary in the admin product edit form */
@@ -590,22 +569,27 @@ button.admin-back {
 .imp-actions { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-top: 1.2rem; }
 
 
-/* ---- Products: All / Out of stock tabs ---- */
-.prod-tabs { display: flex; gap: .3rem; padding: 0 1.1rem; border-bottom: 1px solid var(--border); }
-.prod-tab {
+/* ---- In-panel tab bar ----
+   Shared by the Products All/Out-of-stock tabs and the Orders status tabs, so
+   both read the same. `.prod-*` is kept as an alias for the products view. */
+.admin-tabs, .prod-tabs {
+  display: flex; gap: .3rem; padding: 0 1.1rem; border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.admin-tab, .prod-tab {
   display: inline-flex; align-items: center; gap: .45rem;
   background: none; border: none; border-bottom: 2px solid transparent;
   padding: .6rem .8rem; font: inherit; font-size: .9rem; font-weight: 600;
   color: var(--text-secondary); cursor: pointer;
   transition: color .15s ease, border-color .15s ease;
 }
-.prod-tab:hover { color: var(--primary); }
-.prod-tab.active { color: var(--text-primary); border-bottom-color: var(--primary); }
-.prod-tab-count {
+.admin-tab:hover, .prod-tab:hover { color: var(--primary); }
+.admin-tab.active, .prod-tab.active { color: var(--text-primary); border-bottom-color: var(--primary); }
+.admin-tab-count, .prod-tab-count {
   font-size: .74rem; font-weight: 700; padding: .1rem .4rem; border-radius: 999px;
   background: var(--surface-secondary); color: var(--text-secondary); border: 1px solid var(--border);
 }
-.prod-tab-count.warn { background: #fdecec; color: var(--danger); border-color: #f7cccc; }
+.admin-tab-count.warn, .prod-tab-count.warn { background: #fdecec; color: var(--danger); border-color: #f7cccc; }
 .prod-tabs + .panel-note { padding-top: .9rem; }
 
 /* Sidebar count badge (out-of-stock items needing attention) */
@@ -658,3 +642,120 @@ button.admin-back {
 /* The city name is printed once per group and left blank on the rows beneath it,
    so keep the column narrow enough that the kecamatan stays the visual anchor. */
 #zonesTableHost .data-table td:first-child { white-space: nowrap; }
+
+
+
+/* ---- Order detail view (modal) ---- */
+.od-head {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding-bottom: .9rem; margin-bottom: 1.1rem; border-bottom: 1px solid var(--border);
+}
+.od-placed { font-size: .82rem; color: var(--text-secondary); margin-left: auto; }
+
+/* Customer + fulfillment sit side by side; they're both short. */
+.od-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.od-block {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: .85rem .9rem; background: var(--surface-secondary);
+}
+.od-section { margin-top: 1.4rem; }
+.od-block h4, .od-section h4 {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-secondary); margin-bottom: .5rem;
+}
+.od-strong { font-weight: 700; color: var(--text-primary); font-size: .95rem; }
+.od-muted { color: var(--text-secondary); font-size: .82rem; margin-top: .3rem; line-height: 1.45; }
+.od-address { font-style: normal; color: var(--text-primary); font-size: .88rem; margin-top: .25rem; line-height: 1.45; }
+
+/* Label/value pairs (customer contact, payment). */
+.od-pairs { display: grid; grid-template-columns: auto 1fr; gap: .3rem .8rem; margin-top: .4rem; font-size: .86rem; }
+.od-pairs dt { color: var(--text-secondary); }
+.od-pairs dd { color: var(--text-primary); overflow-wrap: anywhere; }
+.od-pairs a { color: var(--primary); text-decoration: none; }
+.od-pairs a:hover { text-decoration: underline; }
+
+/* Money breakdown, right-aligned like a receipt. */
+.od-totals {
+  display: grid; grid-template-columns: 1fr auto; gap: .35rem 1.5rem;
+  max-width: 340px; margin-left: auto; font-size: .9rem;
+}
+.od-totals dt { color: var(--text-secondary); }
+.od-totals dd { text-align: right; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.od-totals dd.minus { color: var(--danger); }
+.od-totals dt.grand, .od-totals dd.grand {
+  border-top: 1px solid var(--border); padding-top: .45rem; margin-top: .2rem;
+  font-weight: 800; color: var(--text-primary); font-size: 1.05rem;
+}
+
+/* Status actions: the primary moves, then a manual picker as the escape hatch
+   (moving an order backwards, or reopening a cancelled one). */
+.od-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.od-manual { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--border); }
+.od-manual > label {
+  display: block; font-size: .78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: .35rem;
+}
+.od-manual-row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.od-manual-row select {
+  flex: 0 1 220px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-primary);
+  padding: .5rem .7rem; border-radius: var(--radius-sm); font-size: .9rem; font-family: inherit;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.od-manual-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.od-manual .status-flow-hint { margin-top: .5rem; }
+
+/* ---- Status timeline ---- */
+.order-timeline { list-style: none; margin: 0; padding: 0 0 0 1.1rem; position: relative; }
+/* The connecting rail behind the dots. */
+.order-timeline::before {
+  content: ""; position: absolute; left: 3px; top: .55rem; bottom: .55rem;
+  width: 2px; background: var(--border);
+}
+.timeline-point {
+  position: relative; display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1rem; padding: .42rem 0;
+}
+/* Each point carries its stage color via `color`, so the dot's ring and (when
+   it's the current stage) its fill both pick it up. The label/time have their
+   own colors, so this never leaks into the text. */
+.timeline-point.placed, .timeline-point.awaiting_payment { color: #8a94a6; }
+.timeline-point.needs_shipping { color: #f0b429; }
+.timeline-point.shipped { color: var(--primary); }
+.timeline-point.completed { color: var(--success); }
+.timeline-point.cancelled { color: var(--danger); }
+.timeline-point::before {
+  content: ""; position: absolute; left: -1.1rem; top: .72rem;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--surface); border: 2px solid currentColor;
+}
+/* The stage the order is in now: filled, with a soft halo. */
+.timeline-point.current::before {
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.timeline-label {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  font-size: .88rem; font-weight: 600; color: var(--text-secondary);
+}
+.timeline-point.current .timeline-label { color: var(--text-primary); font-weight: 700; }
+.timeline-tag {
+  font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: .1rem .35rem; border-radius: 999px;
+  background: var(--surface-secondary); color: var(--text-secondary); border: 1px solid var(--border);
+}
+.timeline-tag.now { background: var(--primary-light); color: var(--primary); border-color: transparent; }
+.timeline-time { font-size: .78rem; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Stage reached before status tracking existed — no timestamp to show. */
+.timeline-time.unknown { font-style: italic; opacity: .75; }
+.timeline-note {
+  margin-top: .7rem; font-size: .78rem; color: var(--text-secondary);
+  line-height: 1.45; padding-left: 1.1rem;
+}
+
+@media (max-width: 620px) {
+  .od-grid { grid-template-columns: 1fr; }
+  .od-placed { margin-left: 0; }
+  .od-totals { max-width: none; }
+  .timeline-point { flex-direction: column; gap: .1rem; }
+}

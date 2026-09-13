@@ -145,8 +145,37 @@ export async function deleteProduct(id) {
 }
 
 // ---- Orders ----
+// Append one status-history row. Every code path that writes orders.status must
+// go through this so the admin timeline stays complete: order creation, the
+// admin PATCH, and the Midtrans webhook. Takes a client so the history row and
+// the status write land in the same transaction (never one without the other).
+async function recordStatusChange(client, orderId, status) {
+  await client.query(
+    "INSERT INTO order_status_history (order_id, status) VALUES ($1, $2)",
+    [orderId, status]
+  );
+}
+
+// Read an order's status transitions, oldest first — the shape the timeline
+// renders. `id` is ordered alongside changed_at so two changes inside the same
+// millisecond still come back in the order they happened.
+async function getStatusHistory(clientOrNull, id) {
+  const run = clientOrNull ? clientOrNull.query.bind(clientOrNull) : query;
+  const { rows } = await run(
+    "SELECT status, changed_at FROM order_status_history WHERE order_id = $1 ORDER BY changed_at, id",
+    [id]
+  );
+  return rows.map(r => ({
+    status: r.status,
+    changedAt: r.changed_at instanceof Date ? r.changed_at.toISOString() : r.changed_at,
+  }));
+}
+
 // Convert order + item rows into the API order shape.
-function mapOrder(orderRow, itemRows) {
+// `historyRows` is null when the caller didn't load the timeline (the orders
+// list skips it — one query per order would be wasteful for a screen that only
+// shows the current stage). null means "not loaded", [] means "none recorded".
+function mapOrder(orderRow, itemRows, historyRows = null) {
   return {
     id: orderRow.id,
     createdAt: orderRow.created_at instanceof Date ? orderRow.created_at.toISOString() : orderRow.created_at,
@@ -186,6 +215,8 @@ function mapOrder(orderRow, itemRows) {
     paymentTxnId: orderRow.payment_txn_id ?? null,
     fulfillmentMethod: orderRow.fulfillment_method ?? "delivery",
     promoCode: orderRow.promo_code ?? null,
+    // [{ status, changedAt }] oldest first, or null when not loaded.
+    statusHistory: historyRows,
   };
 }
 
@@ -204,12 +235,28 @@ export async function setOrderPayment(id, { token = null, redirectUrl = null, st
 // status. Only updates fulfilment when `orderStatus` is provided.
 // Returns { updated: boolean }.
 export async function applyPaymentNotification(orderId, { paymentStatus, orderStatus = null, txnId = null }) {
-  const sets = ["payment_status = $2"];
-  const values = [orderId, paymentStatus];
-  if (txnId) { sets.push(`payment_txn_id = $${values.length + 1}`); values.push(txnId); }
-  if (orderStatus) { sets.push(`status = $${values.length + 1}`); values.push(orderStatus); }
-  const { rowCount } = await query(`UPDATE orders SET ${sets.join(", ")} WHERE id = $1`, values);
-  return { updated: rowCount > 0 };
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      "SELECT status FROM orders WHERE id = $1 FOR UPDATE", [orderId]
+    );
+    if (rows.length === 0) return { updated: false };
+
+    // Midtrans re-sends notifications, so only treat this as a status change
+    // when the order isn't already in the target status — otherwise a retry
+    // would add a duplicate point to the timeline.
+    const moves = !!orderStatus && rows[0].status !== orderStatus;
+
+    const sets = ["payment_status = $2"];
+    const values = [orderId, paymentStatus];
+    if (txnId) { sets.push(`payment_txn_id = $${values.length + 1}`); values.push(txnId); }
+    if (moves) { sets.push(`status = $${values.length + 1}`); values.push(orderStatus); }
+    const { rowCount } = await client.query(
+      `UPDATE orders SET ${sets.join(", ")} WHERE id = $1`, values
+    );
+
+    if (moves) await recordStatusChange(client, orderId, orderStatus);
+    return { updated: rowCount > 0 };
+  });
 }
 
 export async function getOrders() {
@@ -224,13 +271,14 @@ export async function getOrders() {
   return orders.map(o => mapOrder(o, byOrder.get(o.id)));
 }
 
+// Single order, including its status timeline (the detail view needs both).
 export async function getOrder(id) {
   const { rows: orders } = await query("SELECT * FROM orders WHERE id = $1", [id]);
   if (orders.length === 0) return null;
   const { rows: items } = await query(
     "SELECT * FROM order_items WHERE order_id = $1 ORDER BY id", [id]
   );
-  return mapOrder(orders[0], items);
+  return mapOrder(orders[0], items, await getStatusHistory(null, id));
 }
 
 // Create an order atomically: upsert customer, insert order + items, decrement
@@ -298,6 +346,9 @@ export async function createOrder(order) {
       );
     }
 
+    // The status the order starts in is the first point on its timeline.
+    await recordStatusChange(client, order.id, order.status);
+
     return getOrderWithClient(client, order.id);
   });
 }
@@ -309,18 +360,29 @@ async function getOrderWithClient(client, id) {
   const { rows: items } = await client.query(
     "SELECT * FROM order_items WHERE order_id = $1 ORDER BY id", [id]
   );
-  return mapOrder(orders[0], items);
+  return mapOrder(orders[0], items, await getStatusHistory(client, id));
 }
 
 
 // ---- Order status update ----
+// Moves an order and appends the transition to its history, atomically. A
+// re-save of the status the order is already in is a no-op: it returns the order
+// unchanged rather than adding a duplicate timeline entry.
 export async function updateOrderStatus(id, status) {
-  const { rows } = await query(
-    "UPDATE orders SET status = $1 WHERE id = $2 RETURNING id",
-    [status, id]
-  );
-  if (rows.length === 0) return null;
-  return getOrder(id);
+  return withTransaction(async (client) => {
+    // Lock the row so two concurrent moves can't interleave and record the
+    // transitions out of order.
+    const { rows } = await client.query(
+      "SELECT status FROM orders WHERE id = $1 FOR UPDATE", [id]
+    );
+    if (rows.length === 0) return null;
+
+    if (rows[0].status !== status) {
+      await client.query("UPDATE orders SET status = $1 WHERE id = $2", [status, id]);
+      await recordStatusChange(client, id, status);
+    }
+    return getOrderWithClient(client, id);
+  });
 }
 
 // ============================================================================
