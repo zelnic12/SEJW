@@ -19,6 +19,7 @@ import { publicPromoRouter, adminPromoRouter } from "./routes/promo-codes.js";
 import { publicBannersRouter, adminBannersRouter } from "./routes/banners.js";
 import brandLogosRouter from "./routes/brand-logos.js";
 import { publicAftersalesRouter, adminAftersalesRouter } from "./routes/aftersales.js";
+import importsRouter from "./routes/imports.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,11 @@ const app = express();
 
 // ---- Middleware ----
 app.use(cors());
+// The bulk product import posts the whole parsed spreadsheet back as JSON, which
+// is far bigger than express's 100 kB default. Scoping a larger limit to that
+// path only — registered first, because body-parser skips a body it has already
+// parsed, so this wins for /api/admin/imports and the default applies elsewhere.
+app.use("/api/admin/imports", express.json({ limit: "8mb" }));
 app.use(express.json());
 
 // Simple request log.
@@ -74,6 +80,8 @@ app.use("/api/brand-logos", brandLogosRouter);
 // admin case management (JWT).
 app.use("/api/aftersales", publicAftersalesRouter);
 app.use("/api/admin/aftersales", requireAuth, adminAftersalesRouter);
+// Bulk product import from a spreadsheet (parse → preview → commit).
+app.use("/api/admin/imports", requireAuth, importsRouter);
 // Analytics are admin-only — protected at the mount point.
 app.use("/api/analytics", requireAuth, analyticsRouter);
 

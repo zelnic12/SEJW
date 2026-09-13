@@ -320,7 +320,10 @@ export async function renderProducts(root) {
     <div class="panel">
       <div class="panel-head">
         <h2 id="prodHeading">Products (${products.length})</h2>
-        <button class="btn btn-primary btn-sm" id="addProductBtn">+ Add product</button>
+        <div class="panel-head-actions">
+          <button class="btn btn-secondary btn-sm" id="importProductsBtn">⬆️ Import from Excel/CSV</button>
+          <button class="btn btn-primary btn-sm" id="addProductBtn">+ Add product</button>
+        </div>
       </div>
       <div class="table-toolbar">
         <div class="search-field">
@@ -379,5 +382,7 @@ export async function renderProducts(root) {
 
   searchInput.addEventListener("input", applyFilter);
   root.querySelector("#addProductBtn").addEventListener("click", () => productForm(root, null));
+  // Bulk import lives in its own view; the hash change routes there.
+  root.querySelector("#importProductsBtn").addEventListener("click", () => { location.hash = "#import"; });
   wireRowActions();
 }

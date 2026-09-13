@@ -27,6 +27,37 @@ export const imageUpload = multer({
   },
 });
 
+// ---- Spreadsheet uploads (bulk product import) ----
+// Also memory-only: the file is parsed in-process and never persisted.
+export const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls", ".csv"];
+export const MAX_SPREADSHEET_BYTES = 10 * 1024 * 1024;   // 10 MB
+
+// Browsers are wildly inconsistent about spreadsheet mime types (Excel files
+// often arrive as application/octet-stream, CSVs as text/plain), so the
+// extension is the gate and the mime type is only a sanity check.
+const SPREADSHEET_MIMES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/octet-stream",
+  "text/csv", "application/csv", "text/plain", "text/x-csv", "application/x-csv",
+  "", undefined,
+]);
+
+export const spreadsheetUpload = multer({
+  storage,
+  limits: { fileSize: MAX_SPREADSHEET_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ext = (file.originalname || "").toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || "";
+    if (!SPREADSHEET_EXTENSIONS.includes(ext)) {
+      return cb(new Error(`Unsupported file type “${ext || file.originalname}”. Upload an .xlsx, .xls or .csv file.`));
+    }
+    if (!SPREADSHEET_MIMES.has(file.mimetype)) {
+      return cb(new Error(`Unexpected file content type “${file.mimetype}”. Upload an .xlsx, .xls or .csv file.`));
+    }
+    cb(null, true);
+  },
+});
+
 // Run a multer middleware as a promise so routes can use async/await.
 // Rejects with multer's error, which uploadErrorMessage() turns into copy.
 export function runUpload(middleware, req, res) {

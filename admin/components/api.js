@@ -100,6 +100,15 @@ export const api = {
   getConversation: id => request(`/admin/chat/conversations/${id}/messages`),
   replyConversation: (id, body) => request(`/admin/chat/conversations/${id}/messages`, { method: "POST", body: { body } }),
 
+  // Bulk product import (admin)
+  parseProductImport: file => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return uploadForm("/admin/imports/products/parse", fd);
+  },
+  previewProductImport: payload => request("/admin/imports/products/preview", { method: "POST", body: payload }),
+  commitProductImport: payload => request("/admin/imports/products/commit", { method: "POST", body: payload }),
+
   // Aftersales requests (admin)
   listAftersalesRequests: ({ type = "", status = "" } = {}) => {
     const qs = new URLSearchParams();

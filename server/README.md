@@ -258,6 +258,43 @@ Read-only aggregate endpoints powering `/admin.html` (all require a Bearer token
 > Seed demo orders for meaningful analytics with `npm run seed:orders`
 > (or `npm run db:demo` to migrate + seed products + seed orders in one go).
 
+### Bulk product import (admin)
+
+Three JWT-protected steps behind the dashboard's **Import products** wizard. The
+parsed rows travel back to the browser between steps, so the server keeps no
+import state and nothing is written to disk.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/admin/imports/products/parse`   | Multipart `.xlsx`/`.xls`/`.csv` → headers, rows, and a suggested column mapping |
+| POST | `/api/admin/imports/products/preview` | Dry run: per-row parsed values, warnings, errors and duplicate flags |
+| POST | `/api/admin/imports/products/commit`  | Inserts the importable rows and returns a full report |
+
+- **Parsing** uses `exceljs`. The first row with two or more filled cells is the
+  header row, so leading title/instruction rows in a Shopee export are skipped.
+  Limits: 10 MB, 5,000 rows.
+- **Column mapping** is guessed from Indonesian and English header aliases
+  (`Nama Produk`, `Harga`, `Stok`, `Link Gambar`, `Product Name`, `Price`…) but
+  always confirmed by the admin. Unmapped columns are ignored, so extra Shopee
+  variant/SKU columns need no attention. Only **name** and **price** must be mapped.
+- **Messy values** are cleaned before parsing: `Rp 285.000` → `285000`,
+  `Rp1.250.500,00` → `1250500`, `3 pcs` → `3`. A lone separator followed by
+  exactly three digits is treated as a thousands separator. The preview shows the
+  original text next to the parsed number so surprises are visible.
+- **Rows are classified, never dropped silently**: `ready`, `duplicate`
+  (case-insensitive name match against the catalog or an earlier row in the same
+  file), `error` (missing/unreadable name or price), or `empty` (blank row or a
+  repeated header row). Preview and commit share the same normaliser, so the
+  preview is exactly what commit does.
+- **Images** are best effort: a mapped URL column is fetched (8s timeout, 5 MB
+  cap, image content-type + magic-byte check, private-address hosts refused) and
+  uploaded through the existing Cloudinary helper. Any failure still imports the
+  product and flags it `needs an image` in the report — capped at 250 image
+  fetches per import.
+
+`src/import/products.js` holds the pure logic (parsing, alias matching, number
+cleaning, row classification); `src/routes/imports.js` orchestrates.
+
 ### Aftersales (warranty claims + returns/exchanges)
 
 Customers don't have accounts, so the **order id + the email on that order** is the
