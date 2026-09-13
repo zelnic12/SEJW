@@ -45,6 +45,30 @@
     return d ? d.sale : Number(p.price);
   }
 
+  // Star indicator for a card.
+  // Prefers the review average (reviewCount/avgRating from GET /api/products) and
+  // shows the number of reviews with it. When a product has no reviews yet we fall
+  // back to the catalog's own `rating` field — which the API has always returned —
+  // so a card always carries a visible rating instead of only the 2-3 products
+  // that happen to have been reviewed.
+  function ratingMarkup(p) {
+    const reviewCount = Number(p.reviewCount) || 0;
+    const reviewAvg = Number(p.avgRating) || 0;
+    if (reviewCount > 0 && reviewAvg > 0) {
+      return `<span class="card-rating" title="${reviewCount} customer review${reviewCount === 1 ? "" : "s"}">
+        <span class="star" aria-hidden="true">★</span> ${reviewAvg.toFixed(1)}
+        <span class="card-rating-count">(${reviewCount})</span>
+      </span>`;
+    }
+    const catalogRating = Number(p.rating) || 0;
+    if (catalogRating > 0) {
+      return `<span class="card-rating" title="Rating — no customer reviews yet">
+        <span class="star" aria-hidden="true">★</span> ${catalogRating.toFixed(1)}
+      </span>`;
+    }
+    return `<span class="card-rating muted">Not rated yet</span>`;
+  }
+
   // A single catalog card. `data-view` / `data-add` hooks are wired by renderGrid.
   function cardHTML(p) {
     const out = p.stock <= 0;
@@ -66,9 +90,7 @@
       <div class="card-body">
         <span class="card-cat">${esc(p.brand)} · ${esc(p.category)}</span>
         <span class="card-name">${esc(p.name)}</span>
-        ${p.reviewCount > 0
-          ? `<span class="card-rating">★ ${Number(p.avgRating).toFixed(1)} <span class="card-rating-count">(${p.reviewCount})</span></span>`
-          : `<span class="card-rating muted">No reviews yet</span>`}
+        ${ratingMarkup(p)}
         <div class="card-bottom">
           ${priceBlock}
           <button class="add-btn" data-add="${p.id}" ${out ? "disabled" : ""}>${out ? "Sold out" : "Add to cart"}</button>
@@ -103,6 +125,6 @@
   }
 
   window.ProductCard = {
-    money, esc, discountInfo, imageMarkup, primaryImage, priceOf, cardHTML, renderGrid,
+    money, esc, discountInfo, imageMarkup, primaryImage, priceOf, ratingMarkup, cardHTML, renderGrid,
   };
 })();

@@ -185,8 +185,18 @@ img { max-width: 100%; display: block; }
 .add-btn:disabled:hover { background: var(--surface); border-color: var(--border); color: var(--primary); }
 .card-body { padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; flex: 1; }
 .card-cat { color: var(--text-secondary); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-.card-name { font-weight: 600; font-size: 1rem; color: var(--text-primary); }
+/* Product name: plain, always-visible text. It must never depend on :hover or a
+   tap — there is no hover state on touch devices, so a reveal-on-hover name is
+   invisible on mobile. The explicit values below are a guard against a future
+   rule (or a stale cached stylesheet) hiding it again. */
+.card-name {
+  font-weight: 600; font-size: 1rem; color: var(--text-primary);
+  opacity: 1; visibility: visible; overflow-wrap: anywhere;
+}
+.card:hover .card-name, .card:focus-within .card-name { opacity: 1; visibility: visible; }
 .card-rating { color: var(--text-secondary); font-size: .85rem; }
+/* The star itself is gold so the rating reads at a glance against grey text. */
+.card-rating .star, .detail-rating .star { color: var(--warning); }
 /* Price block — supports optional crossed-out original + red sale price */
 .card-prices { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .price-original { color: var(--text-secondary); font-size: .9rem; text-decoration: line-through; }
@@ -791,6 +801,35 @@ img { max-width: 100%; display: block; }
 .cat-tile-name { font-weight: 600; font-size: .9rem; }
 .cat-tile-count { font-size: .74rem; color: var(--text-secondary); }
 
+/* ---- Homepage: shop by brand ---- */
+/* Same responsive scroller pattern as the category row: tiles share the width on
+   desktop and the row scrolls horizontally once they no longer fit. */
+.brand-row-section { margin-top: 2.2rem; }
+.brand-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(132px, 1fr);
+  gap: .7rem; overflow-x: auto; padding-bottom: .3rem; scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.brand-tile { display: flex; flex-direction: column; align-items: center; gap: .4rem; text-align: center; }
+.brand-tile-frame {
+  display: grid; place-items: center; width: 100%; height: 66px; padding: .6rem .8rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.brand-tile:hover .brand-tile-frame,
+.brand-tile:focus-visible .brand-tile-frame {
+  transform: translateY(-2px); border-color: var(--primary); box-shadow: var(--shadow);
+}
+/* Real logo when one exists in /assets/brands… */
+.brand-tile-logo { max-height: 42px; max-width: 100%; object-fit: contain; }
+/* …otherwise the brand name as clean text (never a broken-image icon). */
+.brand-tile-name {
+  font-weight: 700; font-size: .95rem; letter-spacing: -.01em;
+  color: var(--text-primary); overflow-wrap: anywhere;
+}
+.brand-tile:hover .brand-tile-name { color: var(--primary); }
+.brand-tile-count { font-size: .74rem; color: var(--text-secondary); }
+
 /* ---- Homepage: exclusive deals ---- */
 .deals-section {
   margin-top: 2.5rem; padding: 1.4rem 1.4rem 1.6rem;
@@ -838,6 +877,8 @@ img { max-width: 100%; display: block; }
 @media (max-width: 480px) {
   .trust-strip { gap: .6rem 1.2rem; font-size: .82rem; }
   .cat-nav-row { grid-auto-columns: minmax(104px, 1fr); }
+  .brand-row { grid-auto-columns: minmax(116px, 1fr); }
+  .brand-tile-frame { height: 58px; }
   .deals-section { padding: 1.1rem 1rem 1.3rem; }
   .banner-dots { bottom: .6rem; }
   /* Keep carousel arrows circular even though .btn goes full-width on mobile. */

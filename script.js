@@ -124,6 +124,24 @@ function renderFooterLinks() {
 }
 
 // ---- Product detail view ----
+// Rating line for the detail view. Mirrors the card rule (see ProductCard.
+// ratingMarkup): review average when there are reviews, otherwise the catalog
+// rating, so the card and the detail view never disagree.
+function detailRatingHTML(reviewCount, reviewAvg, catalogRating) {
+  const count = Number(reviewCount) || 0;
+  const avg = Number(reviewAvg) || 0;
+  if (count > 0 && avg > 0) {
+    return `<span class="star" aria-hidden="true">★</span> ${avg.toFixed(1)}
+      <span class="detail-rating-count">based on ${count} review${count === 1 ? "" : "s"}</span>`;
+  }
+  const catalog = Number(catalogRating) || 0;
+  if (catalog > 0) {
+    return `<span class="star" aria-hidden="true">★</span> ${catalog.toFixed(1)}
+      <span class="detail-rating-count">no customer reviews yet</span>`;
+  }
+  return `<span class="muted">Not rated yet</span>`;
+}
+
 function renderProductDetail(product) {
   const out = product.stock <= 0;
   const low = !out && product.stock <= 5;
@@ -163,11 +181,7 @@ function renderProductDetail(product) {
         <a class="detail-brand-link" href="${window.SiteHeader.categoryUrl(product.category)}">${esc(product.category)}</a>
       </span>
       <h2 id="detailTitle" class="detail-name">${esc(product.name)}</h2>
-      <div class="detail-rating" id="detailRating">${
-        product.reviewCount > 0
-          ? `★ ${product.avgRating.toFixed(1)} <span class="detail-rating-count">based on ${product.reviewCount} review${product.reviewCount === 1 ? "" : "s"}</span>`
-          : `<span class="muted">No reviews yet</span>`
-      }</div>
+      <div class="detail-rating" id="detailRating">${detailRatingHTML(product.reviewCount, product.avgRating, product.rating)}</div>
       ${(() => {
         const d = discountInfo(product);
         return d
@@ -266,9 +280,7 @@ function setupReviews(product) {
 
   function updateAverage(stats) {
     if (!ratingEl) return;
-    ratingEl.innerHTML = stats.count > 0
-      ? `★ ${Number(stats.average).toFixed(1)} <span class="detail-rating-count">based on ${stats.count} review${stats.count === 1 ? "" : "s"}</span>`
-      : `<span class="muted">No reviews yet</span>`;
+    ratingEl.innerHTML = detailRatingHTML(stats.count, stats.average, product.rating);
   }
 
   async function load() {
@@ -430,6 +442,8 @@ async function init() {
     await loadProducts();
     window.SiteHeader.init(PRODUCTS);
     renderCategoryRow();
+    // Brand row fetches its logo map, so let it settle on its own.
+    window.BrandRow.render("#brandRow", PRODUCTS);
     renderDeals();
     renderFooterLinks();
     renderFilters();
