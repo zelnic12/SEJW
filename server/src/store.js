@@ -1211,3 +1211,102 @@ export async function updateAftersalesRequest(id, { status, adminNotes } = {}) {
   // Re-read so the product name join is present in the response.
   return getAftersalesRequest(rows[0].id);
 }
+
+
+// ============================================================================
+// Category icons
+// Categories themselves are still just the distinct products.category values —
+// this is only an optional icon override keyed on that text.
+// ============================================================================
+
+function mapCategoryIcon(row) {
+  if (!row) return null;
+  return {
+    categoryName: row.category_name,
+    iconUrl: row.icon_url,
+    cloudinaryPublicId: row.cloudinary_public_id ?? null,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+// Every category in the catalog, with its product count and custom icon (null
+// when none has been uploaded). This is what both the storefront tile row and
+// the admin screen read, so the two can't disagree.
+export async function listCategoriesWithIcons() {
+  const { rows } = await query(
+    `SELECT p.category AS name,
+            COUNT(*)::int AS product_count,
+            ci.icon_url,
+            ci.updated_at
+       FROM products p
+       LEFT JOIN category_icons ci ON lower(ci.category_name) = lower(p.category)
+      GROUP BY p.category, ci.icon_url, ci.updated_at
+      ORDER BY p.category`
+  );
+  return rows.map(r => ({
+    name: r.name,
+    productCount: r.product_count,
+    iconUrl: r.icon_url || null,
+    iconUpdatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at ?? null,
+  }));
+}
+
+export async function getCategoryIcon(categoryName) {
+  const { rows } = await query(
+    "SELECT * FROM category_icons WHERE lower(category_name) = lower($1)",
+    [String(categoryName).trim()]
+  );
+  return mapCategoryIcon(rows[0]);
+}
+
+// Does any product actually use this category? Guards against creating icon rows
+// for categories that don't exist in the catalog.
+export async function categoryExists(categoryName) {
+  const { rows } = await query(
+    "SELECT 1 FROM products WHERE lower(category) = lower($1) LIMIT 1",
+    [String(categoryName).trim()]
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Set (or replace) a category's icon.
+ * Returns { icon, previous } so the caller can delete the replaced Cloudinary
+ * asset. Matching is case-insensitive; an UPDATE-then-INSERT keeps that simple
+ * without relying on ON CONFLICT against an expression index.
+ */
+export async function upsertCategoryIcon(categoryName, { iconUrl, cloudinaryPublicId = null }) {
+  const name = String(categoryName).trim();
+  return withTransaction(async (client) => {
+    const { rows: existing } = await client.query(
+      "SELECT * FROM category_icons WHERE lower(category_name) = lower($1) FOR UPDATE",
+      [name]
+    );
+    if (existing[0]) {
+      const { rows } = await client.query(
+        `UPDATE category_icons
+            SET icon_url = $1, cloudinary_public_id = $2, category_name = $3
+          WHERE lower(category_name) = lower($3)
+          RETURNING *`,
+        [iconUrl, cloudinaryPublicId, name]
+      );
+      return { icon: mapCategoryIcon(rows[0]), previous: mapCategoryIcon(existing[0]) };
+    }
+    const { rows } = await client.query(
+      `INSERT INTO category_icons (category_name, icon_url, cloudinary_public_id)
+       VALUES ($1,$2,$3) RETURNING *`,
+      [name, iconUrl, cloudinaryPublicId]
+    );
+    return { icon: mapCategoryIcon(rows[0]), previous: null };
+  });
+}
+
+// Remove an override so the category falls back to the generic icon.
+// Returns the deleted row (for Cloudinary cleanup) or null.
+export async function deleteCategoryIcon(categoryName) {
+  const { rows } = await query(
+    "DELETE FROM category_icons WHERE lower(category_name) = lower($1) RETURNING *",
+    [String(categoryName).trim()]
+  );
+  return rows[0] ? mapCategoryIcon(rows[0]) : null;
+}

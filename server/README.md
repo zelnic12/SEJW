@@ -258,6 +258,32 @@ Read-only aggregate endpoints powering `/admin.html` (all require a Bearer token
 > Seed demo orders for meaningful analytics with `npm run seed:orders`
 > (or `npm run db:demo` to migrate + seed products + seed orders in one go).
 
+### Categories + custom icons
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/categories` | — | Every category in the catalog: `name`, `productCount`, `iconUrl` (null = generic icon) |
+| PUT | `/api/categories/:name/icon` | JWT | Upload/replace the category's icon (multipart, field `icon`) |
+| DELETE | `/api/categories/:name/icon` | JWT | Clear it, reverting to the generic icon |
+
+Categories are **not** records: which ones exist is still derived from the distinct
+`products.category` values. `category_icons` (migration 016) only holds an optional
+image override per category name, so:
+
+- renaming a category on its products immediately changes the list, and an icon row
+  for a name nothing uses no longer appears anywhere;
+- a category with no row falls back to the built-in generic icon.
+
+Matching is case-insensitive (a unique index on `lower(category_name)` stops
+"Audio" and "audio" holding competing icons). Uploads reuse the shared Cloudinary
+pipeline and validation (JPG/PNG/WebP, 5 MB, magic-byte check); replacing or
+clearing an icon deletes the Cloudinary asset it replaced. Uploading for a category
+no product uses returns `404`.
+
+The storefront's "Browse by category" row renders the photo cropped into the
+existing circle (`object-fit: cover`) and always keeps the category name and item
+count text below it.
+
 ### Bulk product import (admin)
 
 Three JWT-protected steps behind the dashboard's **Import products** wizard. The

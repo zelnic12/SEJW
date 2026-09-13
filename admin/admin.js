@@ -10,6 +10,7 @@ import { renderPromos } from "./views/promos.js";
 import { renderBanners } from "./views/banners.js";
 import { renderAftersales } from "./views/aftersales.js";
 import { renderImport } from "./views/import.js";
+import { renderCategories } from "./views/categories.js";
 import { renderLogin } from "./views/login.js";
 import { auth, api, setUnauthorizedHandler } from "./components/api.js";
 import { toast } from "./components/toast.js";
@@ -20,6 +21,7 @@ const VIEWS = {
   // Same view, scoped to stock = 0 — a real route so it's linkable/refreshable.
   "out-of-stock": { title: "Out of stock", render: root => renderProducts(root, { stockFilter: "out" }) },
   import:   { title: "Import products", render: renderImport },
+  categories: { title: "Categories", render: renderCategories },
   orders:   { title: "Orders", render: renderOrders },
   promos:   { title: "Promo codes", render: renderPromos },
   banners:  { title: "Homepage banners", render: renderBanners },

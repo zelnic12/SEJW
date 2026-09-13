@@ -23,6 +23,8 @@ export const FOLDERS = {
   banners: `${ROOT_FOLDER}/banners`,
   // Evidence photos attached to warranty claims / return requests.
   aftersales: `${ROOT_FOLDER}/aftersales`,
+  // Custom icons/photos for the homepage category tiles.
+  categories: `${ROOT_FOLDER}/categories`,
 };
 
 // Uploads are only possible when all three credentials are present. When they
