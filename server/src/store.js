@@ -462,46 +462,66 @@ export async function getAdminById(id) {
 // Product images (management)
 // ============================================================================
 
+// Shape an image row for the admin API. cloudinaryPublicId is null for the
+// emoji placeholders and for legacy images that still live in /uploads.
+function mapProductImage(r) {
+  return {
+    id: r.id,
+    productId: r.product_id,
+    url: r.url,
+    alt: r.alt,
+    position: r.position,
+    cloudinaryPublicId: r.cloudinary_public_id ?? null,
+  };
+}
+
 // List images for a product (ordered).
 export async function getProductImages(productId) {
   const { rows } = await query(
-    "SELECT id, product_id, url, alt, position FROM product_images WHERE product_id = $1 ORDER BY position, id",
+    `SELECT id, product_id, url, alt, position, cloudinary_public_id
+       FROM product_images WHERE product_id = $1 ORDER BY position, id`,
     [Number(productId)]
   );
-  return rows.map(r => ({ id: r.id, productId: r.product_id, url: r.url, alt: r.alt, position: r.position }));
+  return rows.map(mapProductImage);
 }
 
 // Add an image. New images go to the end unless it's the first (position 0).
-export async function addProductImage(productId, url, alt = "") {
+// `cloudinaryPublicId` is stored so the asset can be deleted from Cloudinary later.
+export async function addProductImage(productId, url, alt = "", cloudinaryPublicId = null) {
   const { rows: maxRows } = await query(
     "SELECT COALESCE(MAX(position), -1) AS maxpos FROM product_images WHERE product_id = $1",
     [Number(productId)]
   );
   const position = Number(maxRows[0].maxpos) + 1;
   const { rows } = await query(
-    `INSERT INTO product_images (product_id, url, alt, position)
-     VALUES ($1,$2,$3,$4) RETURNING id, product_id, url, alt, position`,
-    [Number(productId), url, alt, position]
+    `INSERT INTO product_images (product_id, url, alt, position, cloudinary_public_id)
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id, product_id, url, alt, position, cloudinary_public_id`,
+    [Number(productId), url, alt, position, cloudinaryPublicId]
   );
-  const r = rows[0];
-  return { id: r.id, productId: r.product_id, url: r.url, alt: r.alt, position: r.position };
+  return mapProductImage(rows[0]);
 }
 
-// Fetch a single image row (used to locate the file for deletion).
+// Fetch a single image row (used to locate the asset/file for deletion).
 export async function getProductImage(productId, imageId) {
   const { rows } = await query(
-    "SELECT id, product_id, url, alt, position FROM product_images WHERE id = $1 AND product_id = $2",
+    `SELECT id, product_id, url, alt, position, cloudinary_public_id
+       FROM product_images WHERE id = $1 AND product_id = $2`,
     [Number(imageId), Number(productId)]
   );
-  return rows[0] ? { id: rows[0].id, productId: rows[0].product_id, url: rows[0].url, alt: rows[0].alt, position: rows[0].position } : null;
+  return rows[0] ? mapProductImage(rows[0]) : null;
 }
 
+// Deletes the row and returns { url, cloudinaryPublicId } so the caller can
+// remove the backing asset (Cloudinary) or legacy file (local /uploads).
 export async function deleteProductImage(productId, imageId) {
   const { rows } = await query(
-    "DELETE FROM product_images WHERE id = $1 AND product_id = $2 RETURNING url",
+    `DELETE FROM product_images WHERE id = $1 AND product_id = $2
+     RETURNING url, cloudinary_public_id`,
     [Number(imageId), Number(productId)]
   );
-  return rows[0] || null; // returns { url } so the route can remove the file
+  if (!rows[0]) return null;
+  return { url: rows[0].url, cloudinaryPublicId: rows[0].cloudinary_public_id ?? null };
 }
 
 // Set an image as the primary/main one by giving it the lowest position.
@@ -912,6 +932,10 @@ function mapBanner(row) {
   return {
     id: row.id,
     imageUrl: row.image_url || null,
+    // Cloudinary asset id for the image above, so it can be deleted when the
+    // banner is removed or its image replaced. Null for legacy /uploads images.
+    // (Not sensitive: the public_id is part of the delivery URL.)
+    imagePublicId: row.cloudinary_public_id || null,
     backgroundColor: row.background_color || null,
     headline: row.headline,
     subtext: row.subtext || "",
@@ -945,12 +969,12 @@ export async function getBanner(id) {
 // New slides go to the end of the list unless a position is given.
 export async function createBanner(data) {
   const { rows } = await query(
-    `INSERT INTO banners (image_url, background_color, headline, subtext, cta_text, cta_link, position, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,
-             COALESCE($7, (SELECT COALESCE(MAX(position), -1) + 1 FROM banners)),
-             $8)
+    `INSERT INTO banners (image_url, cloudinary_public_id, background_color, headline, subtext, cta_text, cta_link, position, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,
+             COALESCE($8, (SELECT COALESCE(MAX(position), -1) + 1 FROM banners)),
+             $9)
      RETURNING *`,
-    [data.imageUrl ?? null, data.backgroundColor ?? null, data.headline,
+    [data.imageUrl ?? null, data.imagePublicId ?? null, data.backgroundColor ?? null, data.headline,
      data.subtext ?? null, data.ctaText ?? null, data.ctaLink ?? null,
      data.position ?? null, data.isActive ?? true]
   );
@@ -960,7 +984,8 @@ export async function createBanner(data) {
 // Partial update — only the provided keys are written.
 export async function updateBanner(id, data) {
   const map = {
-    imageUrl: "image_url", backgroundColor: "background_color", headline: "headline",
+    imageUrl: "image_url", imagePublicId: "cloudinary_public_id",
+    backgroundColor: "background_color", headline: "headline",
     subtext: "subtext", ctaText: "cta_text", ctaLink: "cta_link",
     position: "position", isActive: "is_active",
   };

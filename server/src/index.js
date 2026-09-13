@@ -23,8 +23,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 // The static frontend lives one level up from server/.
 const FRONTEND_DIR = path.join(__dirname, "..", "..");
-// Uploaded product images live under server/uploads and are served at /uploads.
-const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
+// LEGACY ONLY: images uploaded before the move to Cloudinary. New uploads go
+// straight to Cloudinary's CDN and never touch this folder — see src/cloudinary.js.
+const LEGACY_UPLOADS_DIR = path.join(__dirname, "..", "uploads");
 
 const app = express();
 
@@ -73,8 +74,12 @@ app.use("/api", (req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
-// ---- Serve uploaded product images ----
-app.use("/uploads", express.static(UPLOADS_DIR));
+// ---- LEGACY: serve pre-Cloudinary uploads ----
+// Kept so image URLs already stored in the database ("/uploads/products/…")
+// don't 404 after the migration. Nothing new is ever written here.
+// Safe to delete this mount (and the server/uploads folder) once
+// `npm run migrate:images` has moved the remaining local files to Cloudinary.
+app.use("/uploads", express.static(LEGACY_UPLOADS_DIR));
 
 // ---- Serve the static frontend ----
 app.use(express.static(FRONTEND_DIR));
