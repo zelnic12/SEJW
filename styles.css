@@ -856,15 +856,21 @@ img { max-width: 100%; display: block; }
   background: var(--primary-light); color: var(--primary);
   border-bottom: 1px solid var(--border);
 }
-/* The photo fills that square. Pinned with inset rather than sized with
-   percentages: on a centred grid item `height: 100%` resolves to auto, which
-   would let a tall image escape the box and object-fit would never apply. */
+/* The whole photo is shown inside the square: `contain` rather than `cover`,
+   because cover cropped hard into product shots and cut the product itself off.
+   The padding keeps the image off the tile edges, and whatever space is left
+   over is filled by the tile's neutral background below.
+   Pinned with inset rather than sized with percentages: on a centred grid item
+   `height: 100%` resolves to auto, which would let a tall image escape the box
+   and object-fit would never apply at all. */
 .cat-tile-photo {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: cover;
+  object-fit: contain; padding: .6rem;
 }
-/* Photos bring their own colours — drop the red tint behind them. */
+/* Photos bring their own colours, so drop the red tint — and this very light
+   grey (the same token the cart/detail media panels use) fills the leftover
+   space around a photo whose ratio isn't square, instead of a stark white gap. */
 .cat-tile-icon.has-photo { background: var(--surface-secondary); }
 /* The generic icon scales with the bigger tile so a category without a photo
    yet doesn't look under-filled next to one that has one. */
