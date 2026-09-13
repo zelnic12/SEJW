@@ -162,12 +162,17 @@ img { max-width: 100%; display: block; }
 .card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .card-media {
   position: relative;
-  /* A ratio-based box keeps every card the same height while giving portrait
-     product photos more room than the old flat 160px. min-height is the
-     fallback for browsers without aspect-ratio support. */
-  aspect-ratio: 4 / 3; min-height: 150px;
+  /* Square frame. Product photos are square-ish or portrait far more often than
+     landscape, and a 4/3 box left big empty margins beside them (a 0.9-ratio
+     photo filled only ~67% of it). A 1:1 box lets the same photo fill ~90%
+     without cropping anything out of the artwork. max-height stops the frame
+     getting huge in a full-width single-column layout on phones; min-height is
+     the fallback where aspect-ratio isn't supported. */
+  aspect-ratio: 1 / 1; min-height: 150px; max-height: 320px;
   font-size: 3.4rem; display: grid; place-items: center;
-  background: var(--surface-secondary);
+  /* White, not grey: most supplier photos are shot on white, so whatever margin
+     is left over blends into the frame instead of framing it in grey. */
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
   /* Never let an oversized image spill onto the card text (see below). */
   overflow: hidden;
@@ -468,10 +473,14 @@ img { max-width: 100%; display: block; }
  * is what makes object-fit actually do its job.
  * `contain` rather than `cover`: supplier images often have the product name,
  * badges or a logo inside the artwork, and cropping cuts them off. */
+/* Edge to edge — no padding, so the photo uses the whole frame. `contain` keeps
+   the entire artwork visible; switch this one word to `cover` if you'd rather
+   crop to fill completely (that would cut the badges and model name out of
+   supplier images like the Midea one). */
 .card-media > img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: contain; padding: .5rem;
+  object-fit: contain;
 }
 .card-media .media-emoji { font-size: 3.4rem; }
 .cart-item-media {
@@ -494,7 +503,7 @@ img { max-width: 100%; display: block; }
 .detail-media > .detail-main-img {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
-  object-fit: contain; padding: 1rem;
+  object-fit: contain; padding: .5rem;
 }
 .detail-thumbs { display: flex; gap: .55rem; flex-wrap: wrap; }
 .detail-thumb {
