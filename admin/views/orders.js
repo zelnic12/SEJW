@@ -73,7 +73,9 @@ function orderDetail(root, order) {
   // For pickup, there's no shipping address; show a pickup note instead.
   const addressLine = isPickup
     ? `<em>Self pickup at store — no shipping address</em>`
-    : `${esc(c.address)}, ${esc(c.city)} ${esc(c.postal)}, ${esc(c.country)}`;
+    // Kecamatan is what delivery is priced on, so show it between street and city.
+    : `${[c.address, c.district, `${c.city} ${c.postal}`.trim(), c.country]
+        .filter(Boolean).map(esc).join(", ")}`;
   openModal({
     title: `Order ${order.id}`,
     bodyHTML: `
@@ -94,7 +96,7 @@ function orderDetail(root, order) {
         </table>
       </div>
       <div style="margin-top:1rem;text-align:right">
-        <div style="color:var(--muted);font-size:.9rem">Subtotal ${money(order.amounts.subtotal)}${order.amounts.discount ? ` · Discount −${money(order.amounts.discount)}` : ""} · Shipping ${money(order.amounts.shipping)} · Tax ${money(order.amounts.tax)}</div>
+        <div style="color:var(--muted);font-size:.9rem">Subtotal ${money(order.amounts.subtotal)}${order.amounts.discount ? ` · Discount −${money(order.amounts.discount)}` : ""} · Shipping ${money(order.amounts.shipping)}${order.customer?.district ? ` (${esc(order.customer.district)})` : ""}</div>
         <div style="font-size:1.3rem;font-weight:800;margin-top:.3rem">Total ${money(order.amounts.total)}</div>
       </div>
       ${order.invoiceNo ? `<p style="color:var(--muted);font-size:.82rem;margin-top:.6rem">Invoice: <strong>${esc(order.invoiceNo)}</strong></p>` : ""}

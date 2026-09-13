@@ -5,8 +5,9 @@
 // Exposed on window.CartUI.
 (function () {
   const STORAGE_KEY = "voltedge_cart";
-  const SHIPPING_FEE = 9.99;             // Flat shipping fee below the threshold.
-  const FREE_SHIPPING_THRESHOLD = 100;   // Free shipping at/above this subtotal.
+  // Shipping depends on the delivery kecamatan chosen at checkout (or is nil for
+  // in-store pickup), so the drawer can't know it yet — it shows the subtotal and
+  // defers the fee. The server prices it authoritatively when the order is placed.
 
   const $ = sel => document.querySelector(sel);
   const { money, esc, discountInfo, imageMarkup, primaryImage, priceOf } = window.ProductCard;
@@ -59,8 +60,6 @@
     const list = entries();
     const count = list.reduce((s, e) => s + e.qty, 0);
     const subtotal = list.reduce((s, e) => s + e.qty * priceOf(e.product), 0);
-    // Shipping: free over the threshold, flat fee below, nothing when empty.
-    const shipping = subtotal === 0 ? 0 : (subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_FEE);
 
     const countEl = $("#cartCount");
     if (countEl) countEl.textContent = count;
@@ -69,12 +68,10 @@
     if (!container) return;   // page has a badge but no drawer
 
     $("#cartSubtotal").textContent = money(subtotal);
-    $("#cartShipping").textContent = shipping === 0 ? "Free" : money(shipping);
-    $("#cartTotal").textContent = money(subtotal + shipping);
-    $("#shippingLabel").textContent =
-      subtotal > 0 && subtotal < FREE_SHIPPING_THRESHOLD
-        ? `Shipping (free over ${money(FREE_SHIPPING_THRESHOLD)})`
-        : "Shipping";
+    // The fee depends on the delivery area picked at checkout.
+    $("#shippingLabel").textContent = "Shipping";
+    $("#cartShipping").textContent = "Calculated at checkout";
+    $("#cartTotal").textContent = money(subtotal);
     $("#checkoutBtn").disabled = list.length === 0;
 
     if (list.length === 0) {
@@ -151,6 +148,5 @@
   window.CartUI = {
     init, add, changeQty, remove, render, open, close, entries, isOpen,
     get cart() { return cart; },
-    CONFIG: { SHIPPING_FEE, FREE_SHIPPING_THRESHOLD },
   };
 })();

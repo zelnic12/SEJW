@@ -40,7 +40,7 @@ export async function renderSales(root) {
     { icon: "🧾", label: "Orders", value: num(summary.orders) },
     { icon: "📊", label: "Avg order value", value: money(summary.avgOrderValue) },
     { icon: "🚚", label: "Shipping collected", value: money(summary.shipping) },
-    { icon: "🏦", label: "Tax collected", value: money(summary.tax) },
+
   ]);
 
   const chartPanel = `

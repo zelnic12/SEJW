@@ -647,3 +647,14 @@ button.admin-back {
 .cat-admin-meta strong { overflow-wrap: anywhere; }
 .cat-admin-actions { grid-area: actions; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .cat-admin-error { grid-area: error; margin: 0; }
+
+
+
+/* ---- Shipping zones (Jabodetabek delivery coverage) ---- */
+.zones-intro {
+  margin: -.3rem 0 1rem; color: var(--text-secondary); font-size: .85rem;
+  max-width: 70ch; line-height: 1.5;
+}
+/* The city name is printed once per group and left blank on the rows beneath it,
+   so keep the column narrow enough that the kecamatan stays the visual anchor. */
+#zonesTableHost .data-table td:first-child { white-space: nowrap; }

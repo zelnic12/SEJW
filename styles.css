@@ -392,9 +392,27 @@ img { max-width: 100%; display: block; }
   padding: .7rem .85rem; border-radius: var(--radius-sm); font-size: .95rem; font-family: inherit;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
-.field input.invalid { border-color: var(--danger); }
+/* The delivery-area select matches the text inputs beside it. */
+.field select {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-primary);
+  padding: .7rem .85rem; border-radius: var(--radius-sm); font-size: .95rem; font-family: inherit;
+  width: 100%;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.field input.invalid, .field select.invalid { border-color: var(--danger); }
+.field select:disabled { background: var(--surface-secondary); color: var(--text-secondary); }
 .field-error { color: var(--danger); font-size: .78rem; min-height: .9rem; }
+.field-hint { color: var(--text-secondary); font-size: .78rem; }
+
+/* Jabodetabek-only coverage note, shown with the Delivery option. */
+.delivery-note {
+  margin-top: .9rem; background: var(--primary-light); border: 1px solid #f3c9d1;
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm); padding: .8rem .9rem; display: flex; flex-direction: column; gap: .2rem;
+}
+.delivery-note strong { font-size: .88rem; color: var(--primary); }
+.delivery-note span { font-size: .82rem; color: var(--text-secondary); line-height: 1.5; }
 
 .payment-mount { min-height: 40px; }
 .payment-demo {

@@ -156,9 +156,13 @@ function mapOrder(orderRow, itemRows) {
       phone: orderRow.ship_phone,
       address: orderRow.ship_address,
       city: orderRow.ship_city,
+      // Kecamatan for delivery orders (null for pickup / pre-zones orders).
+      district: orderRow.ship_district ?? null,
       postal: orderRow.ship_postal,
       country: orderRow.ship_country,
     },
+    // Which shipping zone priced this delivery, when one applied.
+    shippingZoneId: orderRow.shipping_zone_id ?? null,
     items: itemRows.map(it => ({
       id: it.product_id,
       name: it.product_name,
@@ -263,17 +267,21 @@ export async function createOrder(order) {
     await client.query(
       `INSERT INTO orders
          (id, customer_id, ship_name, ship_email, ship_phone, ship_address,
-          ship_city, ship_postal, ship_country, subtotal, discount, shipping, tax, total,
-          status, created_at, invoice_no, access_token, fulfillment_method, promo_code)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+          ship_city, ship_district, ship_postal, ship_country,
+          subtotal, discount, shipping, tax, total,
+          status, created_at, invoice_no, access_token, fulfillment_method, promo_code,
+          shipping_zone_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         order.id, customerId, c.name, c.email, c.phone, c.address,
-        c.city, c.postal, c.country,
+        c.city, c.district ?? null, c.postal, c.country,
         order.amounts.subtotal, order.amounts.discount ?? 0, order.amounts.shipping,
-        order.amounts.tax, order.amounts.total,
+        // Tax is no longer charged; the column stays for historical orders.
+        order.amounts.tax ?? 0, order.amounts.total,
         order.status, order.createdAt, order.invoiceNo ?? null, order.accessToken ?? null,
         order.fulfillmentMethod === "pickup" ? "pickup" : "delivery",
         order.promoCode ?? null,
+        order.shippingZoneId ?? null,
       ]
     );
 
@@ -1309,4 +1317,86 @@ export async function deleteCategoryIcon(categoryName) {
     [String(categoryName).trim()]
   );
   return rows[0] ? mapCategoryIcon(rows[0]) : null;
+}
+
+
+// ============================================================================
+// Shipping zones (Jabodetabek delivery coverage, priced per kecamatan)
+// ============================================================================
+
+function mapShippingZone(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    cityName: row.city_name,
+    districtName: row.district_name,
+    shippingFee: Number(row.shipping_fee),
+    isActive: row.is_active,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+// Ordered city → kecamatan so both the checkout dropdown and the admin table can
+// render a scannable, grouped list without sorting client-side.
+export async function listShippingZones({ activeOnly = false } = {}) {
+  const { rows } = await query(
+    `SELECT * FROM shipping_zones
+      ${activeOnly ? "WHERE is_active = true" : ""}
+      ORDER BY city_name, district_name`
+  );
+  return rows.map(mapShippingZone);
+}
+
+export async function getShippingZone(id) {
+  const { rows } = await query("SELECT * FROM shipping_zones WHERE id = $1", [Number(id)]);
+  return rows[0] ? mapShippingZone(rows[0]) : null;
+}
+
+// The authoritative lookup used when an order is placed: an unknown or
+// deactivated zone comes back null so the route can reject the order.
+export async function getActiveShippingZone(id) {
+  if (!Number.isInteger(Number(id))) return null;
+  const { rows } = await query(
+    "SELECT * FROM shipping_zones WHERE id = $1 AND is_active = true",
+    [Number(id)]
+  );
+  return rows[0] ? mapShippingZone(rows[0]) : null;
+}
+
+// Used by the admin create/rename path to keep kecamatan unique per city.
+export async function findShippingZoneByNames(cityName, districtName) {
+  const { rows } = await query(
+    `SELECT * FROM shipping_zones
+      WHERE lower(city_name) = lower($1) AND lower(district_name) = lower($2)`,
+    [String(cityName ?? "").trim(), String(districtName ?? "").trim()]
+  );
+  return rows[0] ? mapShippingZone(rows[0]) : null;
+}
+
+export async function createShippingZone(data) {
+  const { rows } = await query(
+    `INSERT INTO shipping_zones (city_name, district_name, shipping_fee, is_active)
+     VALUES ($1,$2,$3,$4) RETURNING *`,
+    [data.cityName, data.districtName, data.shippingFee, data.isActive ?? true]
+  );
+  return mapShippingZone(rows[0]);
+}
+
+// Partial update — rename, re-price, or flip the active toggle.
+export async function updateShippingZone(id, data) {
+  const map = {
+    cityName: "city_name", districtName: "district_name",
+    shippingFee: "shipping_fee", isActive: "is_active",
+  };
+  const sets = []; const values = []; let i = 1;
+  for (const [key, col] of Object.entries(map)) {
+    if (data[key] !== undefined) { sets.push(`${col} = $${i++}`); values.push(data[key]); }
+  }
+  if (sets.length === 0) return getShippingZone(id);
+  values.push(Number(id));
+  const { rows } = await query(
+    `UPDATE shipping_zones SET ${sets.join(", ")} WHERE id = $${i} RETURNING *`,
+    values
+  );
+  return rows[0] ? mapShippingZone(rows[0]) : null;
 }

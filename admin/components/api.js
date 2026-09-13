@@ -148,6 +148,11 @@ export const api = {
   createPromoCode: data => request("/admin/promo-codes", { method: "POST", body: data }),
   updatePromoCode: (id, data) => request(`/admin/promo-codes/${id}`, { method: "PATCH", body: data }),
 
+  // Shipping zones (admin) — Jabodetabek delivery coverage + per-kecamatan fees
+  listShippingZones: () => request("/admin/shipping-zones"),
+  createShippingZone: data => request("/admin/shipping-zones", { method: "POST", body: data }),
+  updateShippingZone: (id, data) => request(`/admin/shipping-zones/${id}`, { method: "PATCH", body: data }),
+
   // Orders
   listOrders: () => request("/orders"),
   getOrder: id => request(`/orders/${id}`),
