@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Warranty &amp; Returns — Sinar Elektronik</title>
+  <meta name="description" content="Ajukan klaim garansi atau pengembalian barang, dan lacak status permintaan Anda." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <!-- Header (same structure as the rest of the storefront, minus the product
+       search — there's nothing to search on this page) -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="index.html" class="brand" aria-label="Sinar Elektronik home">
+        <span class="brand-mark has-img"><img src="assets/logo.svg" alt="Sinar Elektronik" /></span>
+        <span class="brand-name">Sinar <span>Elektronik</span></span>
+      </a>
+
+      <div class="cat-menu" id="catMenu">
+        <button type="button" class="cat-menu-btn" id="catMenuBtn" aria-expanded="false" aria-controls="catMenuPanel" aria-haspopup="true">
+          <span class="cat-menu-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>Categories</span>
+          <svg class="cat-menu-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="mega-menu" id="catMenuPanel" hidden>
+          <div class="mega-main">
+            <h3 class="mega-title">Shop by category</h3>
+            <div class="mega-grid" id="megaCategories"></div>
+          </div>
+          <div class="mega-side">
+            <h3 class="mega-title">Popular brands</h3>
+            <div class="mega-brands" id="megaBrands"></div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="header-actions" aria-label="Account and cart">
+        <a href="admin.html" class="header-link" title="Store admin dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
+          <span>Admin</span>
+        </a>
+        <button id="cartBtn" class="cart-btn" aria-label="Open cart">
+          🛒 <span>Cart</span>
+          <span id="cartCount" class="cart-count">0</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="header-sub">
+      <div class="container header-sub-inner">
+        <a class="sub-link" href="index.html">All Products</a>
+        <span id="headerQuickLinks" class="sub-links"></span>
+        <a class="sub-link sub-link-accent" href="index.html#deals">Exclusive Deals</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container as-page">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="index.html">Home</a>
+      <span aria-hidden="true">/</span>
+      <span class="breadcrumb-current">Warranty &amp; returns</span>
+    </nav>
+
+    <div class="as-head">
+      <h1>Warranty &amp; Returns</h1>
+      <p class="as-sub">
+        Ada masalah dengan produk Anda? Ajukan klaim garansi atau permintaan
+        pengembalian/tukar di bawah ini — tanpa perlu akun. Anda hanya butuh
+        nomor pesanan dan email yang dipakai saat checkout.
+      </p>
+    </div>
+
+    <div class="as-tabs" role="tablist" aria-label="Aftersales">
+      <button type="button" class="as-tab is-active" id="tabRequest" role="tab" aria-selected="true" aria-controls="panelRequest">
+        Start a request
+      </button>
+      <button type="button" class="as-tab" id="tabTrack" role="tab" aria-selected="false" aria-controls="panelTrack">
+        Track a request
+      </button>
+    </div>
+
+    <!-- ============================ Submit a request ======================= -->
+    <section class="as-panel" id="panelRequest" role="tabpanel" aria-labelledby="tabRequest">
+      <!-- Step 1: verify the order -->
+      <div class="as-card" id="verifyCard">
+        <h2 class="as-card-title"><span class="as-step-num">1</span> Find your order</h2>
+        <p class="as-card-hint">
+          Masukkan nomor pesanan (contoh: VE-XXXXXXXX-XXXX) dan email yang Anda
+          gunakan saat checkout. Klaim bisa diajukan setelah pesanan dikirim.
+        </p>
+        <form id="verifyForm" class="as-form" novalidate>
+          <div class="as-field-row">
+            <div class="as-field">
+              <label for="asOrderId">Order ID</label>
+              <input type="text" id="asOrderId" name="orderId" placeholder="VE-XXXXXXXX-XXXX" autocomplete="off" required />
+            </div>
+            <div class="as-field">
+              <label for="asEmail">Email used at checkout</label>
+              <input type="email" id="asEmail" name="email" placeholder="you@example.com" autocomplete="email" required />
+            </div>
+          </div>
+          <p class="as-error" id="verifyError" hidden></p>
+          <button type="submit" class="btn btn-primary" id="verifyBtn">Find my order</button>
+        </form>
+      </div>
+
+      <!-- Step 2: the request itself (revealed once the order checks out) -->
+      <div class="as-card" id="requestCard" hidden>
+        <h2 class="as-card-title"><span class="as-step-num">2</span> Tell us what's wrong</h2>
+
+        <div class="as-order-summary" id="orderSummary"></div>
+
+        <form id="requestForm" class="as-form" novalidate>
+          <fieldset class="as-field as-fieldset">
+            <legend>What do you need?</legend>
+            <label class="as-radio">
+              <input type="radio" name="type" value="warranty_claim" checked />
+              <span>
+                <strong>Warranty claim</strong>
+                <small>Produk rusak atau tidak berfungsi seperti seharusnya.</small>
+              </span>
+            </label>
+            <label class="as-radio">
+              <input type="radio" name="type" value="return_exchange" />
+              <span>
+                <strong>Return or exchange</strong>
+                <small>Barang tidak sesuai, salah varian, atau ingin ditukar.</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="as-field">
+            <label for="asProduct">Which item is this about?</label>
+            <select id="asProduct" name="productId">
+              <option value="">The order as a whole</option>
+            </select>
+          </div>
+
+          <div class="as-field">
+            <label for="asDescription">What's the problem?</label>
+            <textarea id="asDescription" name="description" rows="5" maxlength="2000" minlength="10"
+              placeholder="Jelaskan masalahnya sedetail mungkin — kapan mulai terjadi, apa yang sudah dicoba, dan kondisi barang saat ini." required></textarea>
+            <small class="as-hint"><span id="descCount">0</span> / 2000 characters (minimum 10)</small>
+          </div>
+
+          <div class="as-field">
+            <label for="asPhotos">Evidence photos <span class="as-optional">(optional, up to 5)</span></label>
+            <input type="file" id="asPhotos" name="photos" accept="image/jpeg,image/png,image/webp" multiple />
+            <small class="as-hint">JPG, PNG or WebP — max 5 MB each. Foto kerusakan sangat membantu proses klaim.</small>
+            <div class="as-previews" id="photoPreviews"></div>
+          </div>
+
+          <p class="as-error" id="requestError" hidden></p>
+          <div class="as-actions">
+            <button type="submit" class="btn btn-primary" id="submitRequestBtn">Submit request</button>
+            <button type="button" class="btn btn-ghost" id="changeOrderBtn">Use a different order</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Step 3: success — the tracking code -->
+      <div class="as-card as-success" id="successCard" hidden>
+        <h2 class="as-card-title">Request received</h2>
+        <p>Simpan kode pelacakan ini untuk memeriksa status permintaan Anda:</p>
+        <div class="as-code-row">
+          <code class="as-code" id="successCode">AS-…</code>
+          <button type="button" class="btn btn-secondary btn-sm" id="copyCodeBtn">Copy code</button>
+        </div>
+        <p class="as-card-hint" id="successHint"></p>
+        <div class="as-actions">
+          <button type="button" class="btn btn-primary" id="goTrackBtn">Track this request</button>
+          <a class="btn btn-ghost" href="index.html">Back to shop</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== Track ================================ -->
+    <section class="as-panel" id="panelTrack" role="tabpanel" aria-labelledby="tabTrack" hidden>
+      <div class="as-card">
+        <h2 class="as-card-title">Track your claim</h2>
+        <p class="as-card-hint">Masukkan kode pelacakan yang Anda terima saat mengajukan permintaan.</p>
+        <form id="trackForm" class="as-form" novalidate>
+          <div class="as-field-row">
+            <div class="as-field as-field-grow">
+              <label for="asTrackCode">Tracking code</label>
+              <input type="text" id="asTrackCode" name="trackingId" placeholder="AS-XXXXXXXX-XXXX" autocomplete="off" required />
+            </div>
+            <button type="submit" class="btn btn-primary as-track-btn" id="trackBtn">Track</button>
+          </div>
+          <p class="as-error" id="trackError" hidden></p>
+        </form>
+      </div>
+
+      <div class="as-card" id="trackResult" hidden></div>
+    </section>
+  </main>
+
+  <!-- Cart drawer (shared markup + shared cart-ui.js) -->
+  <div id="cartOverlay" class="cart-overlay" hidden></div>
+  <aside id="cartDrawer" class="cart-drawer" aria-label="Shopping cart" aria-hidden="true">
+    <div class="cart-header">
+      <h3>Your Cart</h3>
+      <button id="cartClose" class="icon-btn" aria-label="Close cart">✕</button>
+    </div>
+    <div id="cartItems" class="cart-items"></div>
+    <div class="cart-footer">
+      <div class="cart-summary">
+        <div class="summary-row">
+          <span>Subtotal</span>
+          <span id="cartSubtotal">Rp 0</span>
+        </div>
+        <div class="summary-row">
+          <span id="shippingLabel">Shipping</span>
+          <span id="cartShipping">Rp 0</span>
+        </div>
+        <div class="summary-row cart-total-row">
+          <span>Total</span>
+          <strong id="cartTotal">Rp 0</strong>
+        </div>
+      </div>
+      <button id="checkoutBtn" class="btn btn-primary btn-block" disabled>Checkout</button>
+    </div>
+  </aside>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <span class="brand-name">Sinar <span>Elektronik</span></span>
+        <p class="footer-tag">Toko elektronik terpercaya untuk kebutuhan sehari-hari.</p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>Belanja</h4>
+          <span id="footerCategoryLinks" class="footer-links"></span>
+        </div>
+        <div>
+          <h4>Toko</h4>
+          <a href="index.html#deals">Promo &amp; diskon</a>
+          <a href="index.html#catalog">Semua produk</a>
+          <a href="aftersales.html">Garansi &amp; pengembalian</a>
+          <a href="admin.html">Login admin</a>
+        </div>
+      </div>
+    </div>
+    <p class="footer-copy">© 2026 Sinar Elektronik. Toko demo.</p>
+  </footer>
+
+  <script src="product-card.js"></script>
+  <script src="cart-ui.js"></script>
+  <script src="category-icons.js"></script>
+  <script src="site-header.js"></script>
+  <script src="aftersales.js"></script>
+  <script src="chat-widget.js"></script>
+</body>
+</html>

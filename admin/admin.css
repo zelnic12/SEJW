@@ -426,3 +426,59 @@ button.admin-back {
 .order-btns .icon-action { padding: .2rem .45rem; }
 .icon-action:disabled { opacity: .4; cursor: not-allowed; }
 .icon-action:disabled:hover { border-color: var(--border); color: var(--text-secondary); }
+
+
+/* ---- Aftersales view ---- */
+.as-admin-filters {
+  display: flex; flex-wrap: wrap; gap: 1.2rem;
+  padding: 0 1.1rem 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;
+}
+.as-admin-filter { display: flex; flex-direction: column; gap: .4rem; }
+.as-admin-label {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-secondary);
+}
+.as-admin-head { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.as-admin-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: .8rem; font-size: .88rem;
+}
+/* min-width:0 + wrapping so a long email doesn't run into the next column. */
+.as-admin-grid > div { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.as-admin-grid > div > span, .as-admin-grid > div > strong { overflow-wrap: anywhere; }
+.as-admin-section { margin-top: 1.3rem; }
+.as-admin-section h4 {
+  font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-secondary); margin-bottom: .5rem;
+}
+.as-admin-desc {
+  white-space: pre-wrap; font-size: .9rem;
+  background: var(--surface-secondary); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: .8rem .9rem;
+}
+.as-admin-items { list-style: none; margin-top: .7rem; display: flex; flex-direction: column; gap: .25rem; font-size: .88rem; }
+.as-admin-actions { flex-wrap: wrap; }
+.as-admin-section textarea {
+  width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text-primary);
+  padding: .7rem .85rem; border-radius: var(--radius-sm); font: inherit; font-size: .9rem; resize: vertical;
+}
+.as-admin-section textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+
+/* Evidence photos — thumbnails open the full-size image in a new tab. */
+.as-admin-photos { display: flex; flex-wrap: wrap; gap: .5rem; }
+.as-admin-photo {
+  position: relative; display: block; width: 84px; height: 84px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-secondary);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.as-admin-photo:hover { border-color: var(--primary); transform: translateY(-2px); }
+.as-admin-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* Aftersales status + type badges (orders' own statuses are styled above). */
+.badge.submitted    { background: #eef1f6; color: #55617a; }
+.badge.under_review { background: #fff7e6; color: #b26a00; }
+.badge.approved     { background: #e8f6ee; color: var(--success); }
+.badge.processing   { background: #e8f0fe; color: #1a56db; }
+.badge.rejected     { background: #fdecec; color: var(--danger); }
+.badge.type-warranty_claim  { background: var(--primary-light); color: var(--primary); }
+.badge.type-return_exchange { background: #eef1f6; color: #55617a; }

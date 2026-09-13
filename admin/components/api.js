@@ -100,6 +100,18 @@ export const api = {
   getConversation: id => request(`/admin/chat/conversations/${id}/messages`),
   replyConversation: (id, body) => request(`/admin/chat/conversations/${id}/messages`, { method: "POST", body: { body } }),
 
+  // Aftersales requests (admin)
+  listAftersalesRequests: ({ type = "", status = "" } = {}) => {
+    const qs = new URLSearchParams();
+    if (type) qs.set("type", type);
+    if (status) qs.set("status", status);
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return request(`/admin/aftersales${suffix}`);
+  },
+  getAftersalesRequest: id => request(`/admin/aftersales/${encodeURIComponent(id)}`),
+  updateAftersalesRequest: (id, data) =>
+    request(`/admin/aftersales/${encodeURIComponent(id)}`, { method: "PATCH", body: data }),
+
   // Homepage banners (admin)
   listBanners: () => request("/admin/banners"),
   createBanner: data => request("/admin/banners", { method: "POST", body: data }),

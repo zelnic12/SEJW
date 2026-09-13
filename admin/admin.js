@@ -8,6 +8,7 @@ import { renderSales } from "./views/sales.js";
 import { renderMessages_view } from "./views/messages.js";
 import { renderPromos } from "./views/promos.js";
 import { renderBanners } from "./views/banners.js";
+import { renderAftersales } from "./views/aftersales.js";
 import { renderLogin } from "./views/login.js";
 import { auth, api, setUnauthorizedHandler } from "./components/api.js";
 import { toast } from "./components/toast.js";
@@ -18,6 +19,7 @@ const VIEWS = {
   orders:   { title: "Orders", render: renderOrders },
   promos:   { title: "Promo codes", render: renderPromos },
   banners:  { title: "Homepage banners", render: renderBanners },
+  aftersales: { title: "Aftersales", render: renderAftersales },
   messages: { title: "Messages", render: renderMessages_view },
   sales:    { title: "Sales performance", render: renderSales },
 };

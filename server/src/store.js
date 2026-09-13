@@ -1026,3 +1026,181 @@ export async function reorderBanners(orderedIds) {
   });
   return listBanners();
 }
+
+
+// ============================================================================
+// Aftersales service (warranty claims + returns/exchanges)
+// ============================================================================
+
+// Happy path plus a terminal `rejected` branch, mirroring how orders treat
+// `cancelled`. Exported so the routes and the admin UI agree on what's allowed.
+export const AFTERSALES_STATUSES = [
+  "submitted", "under_review", "approved", "rejected", "processing", "completed",
+];
+export const AFTERSALES_TYPES = ["warranty_claim", "return_exchange"];
+
+// Which status can follow which. `rejected` and `completed` are terminal.
+export const AFTERSALES_TRANSITIONS = {
+  submitted:    ["under_review", "rejected"],
+  under_review: ["approved", "rejected"],
+  approved:     ["processing", "rejected"],
+  processing:   ["completed", "rejected"],
+  completed:    [],
+  rejected:     [],
+};
+
+// An order can only be claimed against once it has actually been fulfilled —
+// nothing to warranty or return before it ships.
+export const AFTERSALES_ELIGIBLE_ORDER_STATUSES = ["shipped", "completed"];
+
+function mapAftersales(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    type: row.type,
+    productId: row.product_id ?? null,
+    productName: row.product_name ?? null,     // from the admin list/detail join
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    description: row.description,
+    // [{ url, publicId }] — publicId is only needed server-side for cleanup.
+    photos: Array.isArray(row.photo_urls) ? row.photo_urls : [],
+    status: row.status,
+    adminNotes: row.admin_notes || "",
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
+
+// AS-<base36 timestamp>-<4 random chars>, matching the VE- order id style.
+function newAftersalesId() {
+  const rand = crypto.randomBytes(3).toString("hex").toUpperCase().slice(0, 4);
+  return `AS-${Date.now().toString(36).toUpperCase()}-${rand}`;
+}
+
+// Verify the requester owns the order: the id + email pair must match, the same
+// gate the verified-purchase review check uses. Returns null when it doesn't.
+export async function findOrderForAftersales(orderId, email) {
+  const { rows } = await query(
+    `SELECT id, ship_name, ship_email, status, total, created_at
+       FROM orders
+      WHERE id = $1 AND lower(ship_email) = lower($2)`,
+    [String(orderId).trim(), String(email).trim()]
+  );
+  if (!rows[0]) return null;
+  const o = rows[0];
+  return {
+    id: o.id,
+    customerName: o.ship_name,
+    customerEmail: o.ship_email,
+    status: o.status,
+    total: Number(o.total),
+    createdAt: o.created_at instanceof Date ? o.created_at.toISOString() : o.created_at,
+    // Convenience flag so callers don't re-implement the rule.
+    eligible: AFTERSALES_ELIGIBLE_ORDER_STATUSES.includes(o.status),
+  };
+}
+
+// The order's line items, so the customer can pick which product the request is
+// about (and so we can check a submitted product_id really belongs to the order).
+export async function getOrderItemsForAftersales(orderId) {
+  const { rows } = await query(
+    `SELECT oi.product_id, oi.product_name, oi.quantity
+       FROM order_items oi
+      WHERE oi.order_id = $1
+      ORDER BY oi.id`,
+    [String(orderId).trim()]
+  );
+  return rows.map(r => ({
+    productId: r.product_id ?? null,
+    name: r.product_name,          // snapshotted at order time
+    quantity: Number(r.quantity),
+  }));
+}
+
+// Create a request. Retries on the (vanishingly unlikely) id collision.
+export async function createAftersalesRequest(data) {
+  const photos = Array.isArray(data.photos) ? data.photos : [];
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const id = newAftersalesId();
+    try {
+      const { rows } = await query(
+        `INSERT INTO aftersales_requests
+           (id, order_id, type, product_id, customer_name, customer_email, description, photo_urls, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'submitted')
+         RETURNING *`,
+        [id, data.orderId, data.type, data.productId ?? null, data.customerName,
+         data.customerEmail, data.description, JSON.stringify(photos)]
+      );
+      return mapAftersales(rows[0]);
+    } catch (err) {
+      // 23505 = unique_violation on the primary key → new id, try again.
+      if (err.code !== "23505" || attempt === 4) throw err;
+    }
+  }
+  throw new Error("Could not allocate a tracking id.");
+}
+
+// Single request, with the product name joined in for display.
+export async function getAftersalesRequest(id) {
+  const { rows } = await query(
+    `SELECT a.*, p.name AS product_name
+       FROM aftersales_requests a
+       LEFT JOIN products p ON p.id = a.product_id
+      WHERE a.id = $1`,
+    [String(id).trim()]
+  );
+  return mapAftersales(rows[0]);
+}
+
+// Admin list with optional type/status filters, newest first. Includes a little
+// order context so the table is useful without opening every row.
+export async function listAftersalesRequests({ type = null, status = null } = {}) {
+  const where = [];
+  const values = [];
+  if (type) { values.push(type); where.push(`a.type = $${values.length}`); }
+  if (status) { values.push(status); where.push(`a.status = $${values.length}`); }
+  const { rows } = await query(
+    `SELECT a.*, p.name AS product_name, o.status AS order_status, o.total AS order_total
+       FROM aftersales_requests a
+       LEFT JOIN products p ON p.id = a.product_id
+       LEFT JOIN orders o ON o.id = a.order_id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY a.created_at DESC, a.id DESC`,
+    values
+  );
+  return rows.map(r => ({
+    ...mapAftersales(r),
+    orderStatus: r.order_status || null,
+    orderTotal: r.order_total == null ? null : Number(r.order_total),
+  }));
+}
+
+// Counts per status (for the admin filter chips).
+export async function getAftersalesStatusCounts() {
+  const { rows } = await query(
+    "SELECT status, COUNT(*)::int AS n FROM aftersales_requests GROUP BY status"
+  );
+  const counts = Object.fromEntries(AFTERSALES_STATUSES.map(s => [s, 0]));
+  for (const r of rows) counts[r.status] = r.n;
+  return counts;
+}
+
+// Partial update — status and/or admin notes. Transition validity is enforced by
+// the route (which knows the current status and can explain what's allowed).
+export async function updateAftersalesRequest(id, { status, adminNotes } = {}) {
+  const sets = [];
+  const values = [];
+  if (status !== undefined) { values.push(status); sets.push(`status = $${values.length}`); }
+  if (adminNotes !== undefined) { values.push(adminNotes); sets.push(`admin_notes = $${values.length}`); }
+  if (sets.length === 0) return getAftersalesRequest(id);
+  values.push(String(id).trim());
+  const { rows } = await query(
+    `UPDATE aftersales_requests SET ${sets.join(", ")} WHERE id = $${values.length} RETURNING *`,
+    values
+  );
+  if (!rows[0]) return null;
+  // Re-read so the product name join is present in the response.
+  return getAftersalesRequest(rows[0].id);
+}
