@@ -21,6 +21,7 @@ import brandLogosRouter from "./routes/brand-logos.js";
 import { publicAftersalesRouter, adminAftersalesRouter } from "./routes/aftersales.js";
 import importsRouter from "./routes/imports.js";
 import categoriesRouter from "./routes/categories.js";
+import { publicShippingZonesRouter, adminShippingZonesRouter } from "./routes/shipping-zones.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,9 @@ app.use("/api/products", productsRouter);
 // Categories: public list (name + count + custom icon), admin-only icon upload.
 app.use("/api/categories", categoriesRouter);
 app.use("/api/orders", ordersRouter);
+// Delivery coverage: public list for the checkout dropdown, admin CRUD (JWT).
+app.use("/api/shipping-zones", publicShippingZonesRouter);
+app.use("/api/admin/shipping-zones", requireAuth, adminShippingZonesRouter);
 app.use("/api/store-settings", storeSettingsRouter);
 // Admin image management (upload/delete/set-main/reorder). Auth enforced inside.
 app.use("/api/admin/products", imagesRouter);

@@ -10,14 +10,14 @@ import 'dotenv/config';
 import { pathToFileURL } from "node:url";
 import { pool, withTransaction } from "./pool.js";
 
-const CONFIG = { SHIPPING_FEE: 9.99, FREE_SHIPPING_THRESHOLD: 100, TAX_RATE: 0.08 };
 const round2 = n => Math.round(n * 100) / 100;
 
 const NAMES = [
   "Jane Doe", "Sam Buyer", "Alex Kim", "Maria Lopez", "Chen Wei", "Omar Farouk",
   "Priya Patel", "Liam Murphy", "Nina Rossi", "Tom Becker", "Yuki Tanaka", "Grace Okafor",
 ];
-const COUNTRIES = ["USA", "UK", "Germany", "Japan", "Canada", "France"];
+// Delivery only covers Jabodetabek, so demo orders ship inside it.
+const COUNTRY = "Indonesia";
 
 const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const pick = arr => arr[rand(0, arr.length - 1)];
@@ -29,6 +29,12 @@ function orderId(d) {
 export async function seedOrders(count = 120) {
   const { rows: products } = await pool.query("SELECT id, name, brand, price FROM products");
   if (products.length === 0) throw new Error("No products found — run the product seed first.");
+
+  // Real shipping zones, so demo orders carry a kecamatan and its actual fee.
+  const { rows: zones } = await pool.query(
+    "SELECT id, city_name, district_name, shipping_fee FROM shipping_zones WHERE is_active = true"
+  );
+  if (zones.length === 0) throw new Error("No active shipping zones — run the migrations first.");
 
   await withTransaction(async (client) => {
     await client.query("TRUNCATE order_items, orders, customers RESTART IDENTITY CASCADE");
@@ -50,20 +56,22 @@ export async function seedOrders(count = 120) {
       const items = [...chosen.values()];
 
       const subtotal = round2(items.reduce((s, it) => s + Number(it.product.price) * it.qty, 0));
-      const shipping = subtotal >= CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : CONFIG.SHIPPING_FEE;
-      const tax = round2(subtotal * CONFIG.TAX_RATE);
-      const total = round2(subtotal + shipping + tax);
+      // Zone-based shipping, no tax — same as the live checkout.
+      const zone = pick(zones);
+      const shipping = round2(Number(zone.shipping_fee));
+      const tax = 0;
+      const total = round2(subtotal + shipping);
 
       const name = pick(NAMES);
       const email = name.toLowerCase().replace(/[^a-z]/g, ".") + "@example.com";
-      const country = pick(COUNTRIES);
 
       const { rows: cust } = await client.query(
         `INSERT INTO customers (name, email, phone, address, city, postal, country)
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
          RETURNING id`,
-        [name, email, `555-${rand(100, 999)}-${rand(1000, 9999)}`, `${rand(1, 999)} Demo St`, "Demo City", String(rand(10000, 99999)), country]
+        [name, email, `08${rand(10000000, 99999999)}`, `Jl. Demo No. ${rand(1, 199)}`,
+         zone.city_name, String(rand(10000, 19999)), COUNTRY]
       );
       const customerId = cust[0].id;
 
@@ -74,9 +82,11 @@ export async function seedOrders(count = 120) {
       await client.query(
         `INSERT INTO orders
            (id, customer_id, ship_name, ship_email, ship_phone, ship_address,
-            ship_city, ship_postal, ship_country, subtotal, shipping, tax, total, status, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [id, customerId, name, email, "555-000-0000", "Demo St", "Demo City", "00000", country,
+            ship_city, ship_district, ship_postal, ship_country, shipping_zone_id,
+            subtotal, shipping, tax, total, status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        [id, customerId, name, email, `08${rand(10000000, 99999999)}`, `Jl. Demo No. ${rand(1, 199)}`,
+         zone.city_name, zone.district_name, String(rand(10000, 19999)), COUNTRY, zone.id,
          subtotal, shipping, tax, total, status, created.toISOString()]
       );
 

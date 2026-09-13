@@ -11,6 +11,7 @@ import { renderBanners } from "./views/banners.js";
 import { renderAftersales } from "./views/aftersales.js";
 import { renderImport } from "./views/import.js";
 import { renderCategories } from "./views/categories.js";
+import { renderShippingZones } from "./views/shipping-zones.js";
 import { renderLogin } from "./views/login.js";
 import { auth, api, setUnauthorizedHandler } from "./components/api.js";
 import { toast } from "./components/toast.js";
@@ -24,6 +25,7 @@ const VIEWS = {
   categories: { title: "Categories", render: renderCategories },
   orders:   { title: "Orders", render: renderOrders },
   promos:   { title: "Promo codes", render: renderPromos },
+  "shipping-zones": { title: "Shipping zones", render: renderShippingZones },
   banners:  { title: "Homepage banners", render: renderBanners },
   aftersales: { title: "Aftersales", render: renderAftersales },
   messages: { title: "Messages", render: renderMessages_view },

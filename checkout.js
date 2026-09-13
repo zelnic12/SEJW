@@ -13,6 +13,54 @@ let fulfillmentMethod = "delivery";
 let appliedPromo = null;
 
 /* =========================================================================
+ * Delivery coverage (Jabodetabek)
+ * -------------------------------------------------------------------------
+ * Delivery is limited to the active shipping zones and priced per kecamatan.
+ * The customer picks from this closed list — free-text city entry is gone — and
+ * the server re-reads the chosen zone when the order is placed, so the fee shown
+ * here is only ever a preview.
+ * ========================================================================= */
+const zoneById = new Map();   // "12" → { id, cityName, districtName, shippingFee }
+
+const selectedZone = () => zoneById.get(String($("#fZone")?.value || "")) || null;
+
+async function loadShippingZones() {
+  const select = $("#fZone");
+  if (!select) return;
+  try {
+    const res = await fetch(`${API_BASE}/shipping-zones`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { cities } = await res.json();
+
+    zoneById.clear();
+    for (const city of cities) {
+      for (const zone of city.zones) {
+        zoneById.set(String(zone.id), { ...zone, cityName: city.cityName });
+      }
+    }
+
+    if (!cities.length) {
+      select.innerHTML = `<option value="">Belum ada area pengiriman</option>`;
+      select.disabled = true;
+      return;
+    }
+    // Grouped by kota so a long kecamatan list stays scannable.
+    select.innerHTML = `<option value="">Pilih kecamatan…</option>` +
+      cities.map(city => `
+        <optgroup label="${VE.esc(city.cityName)}">
+          ${city.zones.map(z =>
+            `<option value="${z.id}">${VE.esc(z.districtName)} — ${VE.money(z.shippingFee)}</option>`).join("")}
+        </optgroup>`).join("");
+    select.disabled = false;
+  } catch {
+    // Without the list there's no way to place a valid delivery order, so say so
+    // rather than leaving an empty select that looks broken.
+    select.innerHTML = `<option value="">Gagal memuat area — muat ulang halaman</option>`;
+    select.disabled = true;
+  }
+}
+
+/* =========================================================================
  * Payment abstraction
  * -------------------------------------------------------------------------
  * A PaymentProvider isolates payment handling so a real gateway (Stripe,
@@ -87,16 +135,15 @@ function renderSummary() {
   $("#emptyCart").hidden = true;
 
   // Mirror the server's math for DISPLAY (server stays authoritative on placement):
-  // subtotal → minus promo discount → shipping (free for pickup) + tax off the
-  // discounted base.
+  // subtotal → minus promo discount → shipping (free for pickup). No tax line.
   const isPickup = fulfillmentMethod === "pickup";
   const promoDiscount = appliedPromo ? Math.min(appliedPromo.discount, subtotal) : 0;
   const discountedSubtotal = Math.max(0, +(subtotal - promoDiscount).toFixed(2));
-  const shipping = isPickup
-    ? 0
-    : (discountedSubtotal === 0 ? 0 : (discountedSubtotal >= VE.CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : VE.CONFIG.SHIPPING_FEE));
-  const tax = +(discountedSubtotal * VE.CONFIG.TAX_RATE).toFixed(2);
-  const total = +(discountedSubtotal + shipping + tax).toFixed(2);
+  // Delivery is priced by the chosen kecamatan; nothing to show until one is
+  // picked. Pickup never has a shipping fee. No tax is charged any more.
+  const zone = isPickup ? null : selectedZone();
+  const shipping = zone ? zone.shippingFee : 0;
+  const total = +(discountedSubtotal + shipping).toFixed(2);
 
   $("#summaryItems").innerHTML = entries.map(({ product, qty }) => `
     <div class="summary-item">
@@ -122,16 +169,14 @@ function renderSummary() {
   // Hide the shipping row entirely for pickup (no shipping fee at all).
   const shipRow = $("#sumShipRow");
   if (shipRow) shipRow.hidden = isPickup;
-  $("#sumShipping").textContent = shipping === 0 ? "Free" : VE.money(shipping);
-  $("#sumShipLabel").textContent =
-    discountedSubtotal > 0 && discountedSubtotal < VE.CONFIG.FREE_SHIPPING_THRESHOLD
-      ? `Shipping (free over ${VE.money(VE.CONFIG.FREE_SHIPPING_THRESHOLD)})`
-      : "Shipping";
-  $("#sumTax").textContent = VE.money(tax);
+  $("#sumShipping").textContent = zone ? VE.money(shipping) : "—";
+  $("#sumShipLabel").textContent = zone
+    ? `Shipping (${zone.districtName})`
+    : "Shipping (pilih kecamatan)";
   $("#sumTotal").textContent = VE.money(total);
   $("#payAmount").textContent = VE.money(total);
 
-  return { empty: false, subtotal, shipping, tax, total, entries, promoDiscount };
+  return { empty: false, subtotal, shipping, total, entries, promoDiscount, zone };
 }
 
 /* =========================================================================
@@ -142,14 +187,16 @@ const VALIDATORS = {
   email: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) || "Enter a valid email address.",
   phone: v => (v.replace(/[^\d]/g, "").length >= 7) || "Enter a valid phone number.",
   address: v => v.trim().length >= 4 || "Enter your street address.",
-  city: v => v.trim().length >= 2 || "Enter your city.",
-  postal: v => v.trim().length >= 3 || "Enter a postal / ZIP code.",
+  // The delivery area is a closed list, so "did you pick one" is the whole test —
+  // a value that isn't a known zone id can't be submitted.
+  shippingZoneId: v => (!!v && !!zoneById.get(String(v))) || "Pilih kecamatan tujuan (Jabodetabek).",
+  postal: v => v.trim().length >= 3 || "Enter a postal code.",
   country: v => v.trim().length >= 2 || "Enter your country.",
 };
 
 const FIELD_IDS = {
   name: "fName", email: "fEmail", phone: "fPhone",
-  address: "fAddress", city: "fCity", postal: "fPostal", country: "fCountry",
+  address: "fAddress", shippingZoneId: "fZone", postal: "fPostal", country: "fCountry",
 };
 
 function setFieldError(fieldId, message) {
@@ -167,7 +214,7 @@ function setFieldError(fieldId, message) {
 }
 
 // Address fields are only validated for delivery orders.
-const ADDRESS_FIELDS = ["address", "city", "postal", "country"];
+const ADDRESS_FIELDS = ["address", "shippingZoneId", "postal", "country"];
 
 function collectAndValidate() {
   const data = {};
@@ -206,7 +253,6 @@ function buildOrder(customer, totals) {
     amounts: {
       subtotal: totals.subtotal,
       shipping: totals.shipping,
-      tax: totals.tax,
       total: totals.total,
     },
     // Informational only — the server is authoritative and sets the real status.
@@ -253,7 +299,14 @@ async function handleSubmit(e) {
     const res = await fetch(`${API_BASE}/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customer: order.customer, items: order.items, fulfillmentMethod, promoCode: appliedPromo ? appliedPromo.code : null }),
+      body: JSON.stringify({
+        customer: order.customer,
+        items: order.items,
+        fulfillmentMethod,
+        // The zone id is what the server prices shipping from (delivery only).
+        shippingZoneId: fulfillmentMethod === "delivery" ? Number(order.customer.shippingZoneId) || null : null,
+        promoCode: appliedPromo ? appliedPromo.code : null,
+      }),
     });
 
     const body = await res.json().catch(() => ({}));
@@ -394,7 +447,9 @@ function showConfirmation(order, { pending = false } = {}) {
   } else {
     if (addrRow) addrRow.hidden = false;
     if (pickupNote) pickupNote.hidden = true;
-    $("#confirmAddress").textContent = `${c.address}, ${c.city} ${c.postal}, ${c.country}`;
+    // The kecamatan comes back from the server as part of the verified zone.
+    $("#confirmAddress").textContent =
+      [c.address, c.district, c.city, c.postal, c.country].filter(Boolean).join(", ");
   }
 
   // Tailor the heading/subtext for a pending QRIS payment vs. a completed one.
@@ -532,6 +587,9 @@ async function init() {
       // Hide the shipping address section + show the pickup note.
       if (shippingSection) shippingSection.hidden = isPickup;
       if (pickupNote) pickupNote.hidden = !isPickup;
+      // The Jabodetabek coverage note only applies to delivery.
+      const deliveryNote = $("#deliveryNote");
+      if (deliveryNote) deliveryNote.hidden = isPickup;
       // Clear any address errors when switching to pickup.
       if (isPickup) ADDRESS_FIELDS.forEach(k => setFieldError(FIELD_IDS[k], ""));
       renderSummary();
@@ -541,6 +599,20 @@ async function init() {
   // Clear a field's error as the user corrects it.
   Object.values(FIELD_IDS).forEach(id => {
     document.getElementById(id).addEventListener("input", () => setFieldError(id, ""));
+  });
+
+  // Delivery areas: load the list, then keep the fee preview in sync with it.
+  loadShippingZones();
+  $("#fZone")?.addEventListener("change", () => {
+    setFieldError("fZone", "");
+    const zone = selectedZone();
+    const hint = $("#zoneFeeHint");
+    if (hint) {
+      hint.textContent = zone
+        ? `Ongkir ke ${zone.districtName}, ${zone.cityName}: ${VE.money(zone.shippingFee)}`
+        : "Ongkir muncul setelah kecamatan dipilih.";
+    }
+    renderSummary();
   });
 }
 

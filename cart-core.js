@@ -6,11 +6,10 @@
   const STORAGE_KEY = "voltedge_cart";
 
   // Pricing config — keep checkout and storefront math in sync.
-  const CONFIG = {
-    SHIPPING_FEE: 9.99,           // Flat shipping below the free threshold.
-    FREE_SHIPPING_THRESHOLD: 100, // Free shipping at/above this subtotal.
-    TAX_RATE: 0.08,               // Estimated sales tax applied at checkout.
-  };
+  // Shipping is priced per Jabodetabek kecamatan (see /api/shipping-zones) and
+  // resolved server-side at checkout, so there's no flat fee or threshold here.
+  // No tax is charged.
+  const CONFIG = {};
 
   const API_BASE = "/api";
 
@@ -174,16 +173,15 @@
   // The single source of truth for order math (used by cart, checkout, summary).
   // Note: this is for DISPLAY only — the server independently recomputes totals
   // from DB prices when the order is placed.
-  function computeTotals(cart) {
+  // `shipping` is supplied by the caller once a delivery zone is known (0 for
+  // pickup, or before a kecamatan has been chosen). No tax line any more.
+  function computeTotals(cart, shipping = 0) {
     const entries = cartEntries(cart);
     const subtotal = entries.reduce((s, e) => s + e.qty * priceOf(e.product), 0);
-    const shipping = subtotal === 0
-      ? 0
-      : (subtotal >= CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : CONFIG.SHIPPING_FEE);
-    const tax = +(subtotal * CONFIG.TAX_RATE).toFixed(2);
-    const total = +(subtotal + shipping + tax).toFixed(2);
+    const ship = Number(shipping) || 0;
+    const total = +(subtotal + ship).toFixed(2);
     const count = entries.reduce((s, e) => s + e.qty, 0);
-    return { entries, subtotal, shipping, tax, total, count };
+    return { entries, subtotal, shipping: ship, total, count };
   }
 
   global.VoltEdge = {

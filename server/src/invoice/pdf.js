@@ -95,7 +95,8 @@ export function streamInvoicePdf(order, store, res) {
   const custLines = [
     c.email, c.phone,
     c.address,
-    [c.city, c.postal].filter(Boolean).join(" "),
+    // Kecamatan, kota, postal code — the district is present for delivery orders.
+    [c.district, c.city, c.postal].filter(Boolean).join(", "),
     c.country,
   ].filter(Boolean);
   for (const line of custLines) { doc.text(line, rx, ry, { width: colW }); ry += 12; }
@@ -158,8 +159,12 @@ export function streamInvoicePdf(order, store, res) {
 
   totalRow("Subtotal", money(a.subtotal));
   if (a.discount && a.discount > 0) totalRow("Discount", `− ${money(a.discount)}`, { color: RED });
-  totalRow("Shipping", a.shipping === 0 ? "Free" : money(a.shipping));
-  totalRow("Tax", money(a.tax));
+  // Shipping names the kecamatan it was priced for, when there is one.
+  totalRow(
+    order.customer?.district ? `Shipping (${order.customer.district})` : "Shipping",
+    a.shipping === 0 ? "Free" : money(a.shipping)
+  );
+  // No tax line: tax was removed from checkout.
 
   // Grand total with red rule.
   doc.moveTo(totalsX, y + 2).lineTo(right, y + 2).strokeColor(RED).lineWidth(1.5).stroke();

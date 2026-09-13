@@ -7,14 +7,8 @@ import { createSnapTransaction, getClientConfig, isPaymentEnabled } from "../pay
 
 const router = Router();
 
-// Pricing config — mirrors the frontend (cart-core.js). Totals are ALWAYS
-// recomputed here; client-supplied amounts are never trusted.
-const CONFIG = {
-  SHIPPING_FEE: 9.99,
-  FREE_SHIPPING_THRESHOLD: 100,
-  TAX_RATE: 0.08,
-};
-
+// Shipping is priced per Jabodetabek kecamatan (shipping_zones) and looked up
+// server-side; client-supplied amounts are never trusted. No tax is charged.
 const round2 = n => Math.round(n * 100) / 100;
 
 function validateCustomer(c, method = "delivery") {
@@ -25,9 +19,10 @@ function validateCustomer(c, method = "delivery") {
   if (typeof c.email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) errors.push("valid customer.email is required");
   if (typeof c.phone !== "string" || c.phone.replace(/\D/g, "").length < 7) errors.push("valid customer.phone is required");
   // Shipping address is only required for delivery orders (pickup skips it).
+  // The city/kecamatan is NOT taken from the client — it comes from the selected
+  // shipping zone, so a delivery address can never fall outside the coverage.
   if (method === "delivery") {
     if (typeof c.address !== "string" || c.address.trim().length < 4) errors.push("customer.address is required");
-    if (typeof c.city !== "string" || c.city.trim().length < 2) errors.push("customer.city is required");
     if (typeof c.postal !== "string" || c.postal.trim().length < 3) errors.push("customer.postal is required");
     if (typeof c.country !== "string" || c.country.trim().length < 2) errors.push("customer.country is required");
   }
@@ -144,15 +139,35 @@ router.post("/", async (req, res, next) => {
       promoDiscount = check.discount;
     }
 
-    // The promo reduces the taxable base: subtotal → minus promo → tax/shipping.
     const discountedSubtotal = round2(Math.max(0, subtotal - promoDiscount));
-    // Pickup orders are collected in-store → NO shipping fee. Delivery uses the
-    // usual rule (free over threshold, else flat fee). Computed server-side.
-    const shipping = fulfillmentMethod === "pickup"
-      ? 0
-      : (discountedSubtotal === 0 ? 0 : (discountedSubtotal >= CONFIG.FREE_SHIPPING_THRESHOLD ? 0 : CONFIG.SHIPPING_FEE));
-    const tax = round2(discountedSubtotal * CONFIG.TAX_RATE);
-    const total = round2(discountedSubtotal + shipping + tax);
+
+    // ---- Shipping: per-kecamatan fee from the zone table, never from the client.
+    // Pickup is collected in-store → no zone, no fee.
+    let shipping = 0;
+    let zone = null;
+    if (fulfillmentMethod === "delivery") {
+      const zoneId = req.body?.shippingZoneId;
+      if (zoneId === undefined || zoneId === null || zoneId === "") {
+        return res.status(400).json({
+          error: "Please choose your delivery area (kecamatan). Delivery is available in Jabodetabek only.",
+          shippingZoneInvalid: true,
+        });
+      }
+      // Re-read the zone: it may have been deactivated since the page loaded, or
+      // the request may have been tampered with.
+      zone = await store.getActiveShippingZone(zoneId);
+      if (!zone) {
+        return res.status(400).json({
+          error: "That delivery area isn't available anymore. Please pick another kecamatan (Jabodetabek only).",
+          shippingZoneInvalid: true,
+        });
+      }
+      shipping = round2(zone.shippingFee);
+    }
+
+    // Tax was removed from checkout: subtotal → shipping → total.
+    const tax = 0;
+    const total = round2(discountedSubtotal + shipping);
     // Stored order-level discount = sale savings + promo discount.
     const discount = round2(saleDiscount + promoDiscount);
 
@@ -169,10 +184,13 @@ router.post("/", async (req, res, next) => {
         phone: customer.phone.trim(),
         // Address fields are optional for pickup → default to empty strings.
         address: (customer.address || "").trim(),
-        city: (customer.city || "").trim(),
+        // City + kecamatan are snapshotted from the verified zone, not the client.
+        city: zone ? zone.cityName : (customer.city || "").trim(),
+        district: zone ? zone.districtName : null,
         postal: (customer.postal || "").trim(),
         country: (customer.country || "").trim(),
       },
+      shippingZoneId: zone ? zone.id : null,
       fulfillmentMethod,
       promoCode: promoCode || null,
       promoDiscount,

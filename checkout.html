@@ -51,7 +51,7 @@
                 <span class="fulfillment-opt-icon">🚚</span>
                 <span class="fulfillment-opt-body">
                   <span class="fulfillment-opt-title">Delivery</span>
-                  <span class="fulfillment-opt-desc">Ship to your address · shipping fee applies</span>
+                  <span class="fulfillment-opt-desc">Jabodetabek only · ongkir per kecamatan</span>
                 </span>
               </label>
               <label class="fulfillment-opt" data-method="pickup">
@@ -62,6 +62,12 @@
                   <span class="fulfillment-opt-desc">Collect in person · no shipping fee</span>
                 </span>
               </label>
+            </div>
+            <!-- Coverage note: shown with Delivery so shoppers outside the area
+                 know why, and that Pickup is the alternative. -->
+            <div class="delivery-note" id="deliveryNote">
+              <strong>Pengiriman saat ini hanya tersedia untuk area Jabodetabek</strong>
+              <span>Pilih kecamatan tujuan di bawah untuk melihat ongkos kirimnya. Di luar area itu, silakan pilih Self Pickup di toko.</span>
             </div>
             <div class="pickup-note" id="pickupNote" hidden>
               <strong>Pickup location</strong>
@@ -98,13 +104,18 @@
               <span class="field-error" data-error-for="fAddress"></span>
             </div>
             <div class="field-row">
+              <!-- Delivery area is a closed list: the kecamatan the customer picks
+                   here is what the shipping fee is priced from, server-side. -->
               <div class="field">
-                <label for="fCity">City</label>
-                <input type="text" id="fCity" name="city" autocomplete="address-level2" required />
-                <span class="field-error" data-error-for="fCity"></span>
+                <label for="fZone">Kecamatan (delivery area)</label>
+                <select id="fZone" name="shippingZoneId" required>
+                  <option value="">Loading areas…</option>
+                </select>
+                <span class="field-hint" id="zoneFeeHint">Ongkir muncul setelah kecamatan dipilih.</span>
+                <span class="field-error" data-error-for="fZone"></span>
               </div>
               <div class="field">
-                <label for="fPostal">Postal / ZIP code</label>
+                <label for="fPostal">Postal code</label>
                 <input type="text" id="fPostal" name="postal" autocomplete="postal-code" required />
                 <span class="field-error" data-error-for="fPostal"></span>
               </div>
@@ -152,8 +163,7 @@
           <div class="summary-totals">
             <div class="summary-row"><span>Subtotal</span><span id="sumSubtotal">$0.00</span></div>
             <div class="summary-row" id="sumDiscountRow" hidden><span id="sumDiscountLabel">Discount</span><span id="sumDiscount">−$0.00</span></div>
-            <div class="summary-row" id="sumShipRow"><span id="sumShipLabel">Shipping</span><span id="sumShipping">$0.00</span></div>
-            <div class="summary-row"><span>Tax (est.)</span><span id="sumTax">$0.00</span></div>
+            <div class="summary-row" id="sumShipRow"><span id="sumShipLabel">Shipping</span><span id="sumShipping">Rp 0</span></div>
             <div class="summary-row grand"><span>Total</span><strong id="sumTotal">$0.00</strong></div>
           </div>
         </aside>
