@@ -35,6 +35,9 @@ function bannerForm(root, banner = null) {
   const b = banner || {};
   // Local copy of the image URL: set by uploading a file or pasting a URL.
   let imageUrl = b.imageUrl || "";
+  // Cloudinary id for an uploaded image, so the server can delete the asset when
+  // the image is replaced or the banner removed. Empty for pasted external URLs.
+  let imagePublicId = b.imagePublicId || "";
 
   openModal({
     title: editing ? `Edit banner #${b.id}` : "Add banner",
@@ -97,15 +100,16 @@ function bannerForm(root, banner = null) {
           : `<span class="banner-swatch" style="background:${esc(colourInput.value || DEFAULT_BG)}"></span>`;
       }
 
-      // Upload immediately so the preview is real (reuses the product-image
-      // upload mechanism on the server: multer → /uploads/banners/<file>).
+      // Upload immediately so the preview shows the real asset (same mechanism
+      // as product images: multer memory storage → Cloudinary → secure_url).
       fileInput.addEventListener("change", async () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) return;
         err.hidden = true;
         try {
-          const { url } = await api.uploadBannerImage(file);
+          const { url, publicId } = await api.uploadBannerImage(file);
           imageUrl = url;
+          imagePublicId = publicId || "";
           urlInput.value = url;
           paintPreview();
           toast("Image uploaded", "success");
@@ -115,10 +119,15 @@ function bannerForm(root, banner = null) {
           fileInput.value = "";
         }
       });
-      urlInput.addEventListener("input", () => { imageUrl = urlInput.value.trim(); paintPreview(); });
+      // A hand-edited URL is an external image — it has no Cloudinary asset.
+      urlInput.addEventListener("input", () => {
+        imageUrl = urlInput.value.trim();
+        if (imageUrl !== (b.imageUrl || "")) imagePublicId = "";
+        paintPreview();
+      });
       colourInput.addEventListener("input", paintPreview);
       overlay.querySelector("#bfClearImage").addEventListener("click", () => {
-        imageUrl = ""; urlInput.value = ""; paintPreview();
+        imageUrl = ""; imagePublicId = ""; urlInput.value = ""; paintPreview();
       });
 
       overlay.querySelector("#bannerSave").addEventListener("click", async () => {
@@ -138,6 +147,7 @@ function bannerForm(root, banner = null) {
           ctaText: String(fd.get("ctaText") || "").trim(),
           ctaLink: String(fd.get("ctaLink") || "").trim(),
           imageUrl,
+          imagePublicId,
           backgroundColor,
           isActive: fd.get("isActive") === "true",
         };

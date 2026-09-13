@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "migrate": "node src/db/migrate.js",
+    "migrate:images": "node src/db/migrate-images-to-cloudinary.js",
     "seed": "node src/db/seed.js",
     "seed:orders": "node src/db/seed-orders.js",
     "seed:admin": "node src/db/seed-admin.js",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",

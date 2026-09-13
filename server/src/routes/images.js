@@ -1,49 +1,25 @@
 // ---- Admin product image management: /api/admin/products/:id/images ----
-// All routes are admin-only (requireAuth). Images are stored on disk under
-// server/uploads/products and served at /uploads/products/<file>. The DB stores
-// only the URL/path (never the binary).
+// All routes are admin-only (requireAuth). Images are uploaded to Cloudinary and
+// served from its CDN; the DB stores the returned HTTPS URL plus the public_id
+// used to delete the asset again. Nothing is written to the server's disk, so
+// uploads survive redeploys on hosts with an ephemeral filesystem.
+//
+// Legacy support: rows created before this migration still hold a local
+// "/uploads/products/<file>" path and no public_id. Those keep rendering, and
+// deleting one removes the local file instead of calling Cloudinary.
 import { Router } from "express";
-import multer from "multer";
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import * as store from "../store.js";
 import { requireAuth } from "../auth.js";
+import { uploadBuffer, destroyImage, FOLDERS } from "../cloudinary.js";
+import { imageUpload, runUpload, uploadErrorMessage, validateImageFile, assetId } from "../upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, "..", "..", "uploads", "products");
-
-// Allowed image types → canonical extension.
-const ALLOWED = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-};
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-
-// Store to disk with a safe, random filename (prevents path traversal and
-// filename collisions — the client's filename is never used for the path).
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try { await fs.mkdir(UPLOAD_DIR, { recursive: true }); cb(null, UPLOAD_DIR); }
-    catch (err) { cb(err); }
-  },
-  filename: (req, file, cb) => {
-    const ext = ALLOWED[file.mimetype] || ".bin";
-    const safe = crypto.randomBytes(16).toString("hex");
-    cb(null, `p${Number(req.params.id) || 0}-${Date.now()}-${safe}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: MAX_BYTES, files: 10 },
-  fileFilter: (req, file, cb) => {
-    if (ALLOWED[file.mimetype]) cb(null, true);
-    else cb(new Error("Unsupported file type. Allowed: JPG, PNG, WebP."));
-  },
-});
+// Only used to clean up pre-Cloudinary uploads (see LEGACY_URL_PREFIX below).
+const LEGACY_DIR = path.join(__dirname, "..", "..", "uploads", "products");
+const LEGACY_URL_PREFIX = "/uploads/products/";
 
 const router = Router();
 
@@ -55,6 +31,21 @@ async function ensureProduct(req, res, next) {
   next();
 }
 
+// Remove a legacy on-disk image (best effort, inside the uploads dir only).
+async function removeLegacyFile(url) {
+  if (!url || !url.startsWith(LEGACY_URL_PREFIX)) return;
+  const file = path.join(LEGACY_DIR, path.basename(url));
+  // path.basename strips any traversal; confirm the result stays in LEGACY_DIR.
+  if (path.dirname(file) === LEGACY_DIR) await fs.unlink(file).catch(() => {});
+}
+
+// Delete the backing asset for an image row: Cloudinary when we have a
+// public_id, otherwise the legacy local file.
+async function removeStoredImage({ url, cloudinaryPublicId }) {
+  if (cloudinaryPublicId) await destroyImage(cloudinaryPublicId);
+  else await removeLegacyFile(url);
+}
+
 // GET /api/admin/products/:id/images — list images (admin)
 router.get("/:id/images", requireAuth, ensureProduct, async (req, res, next) => {
   try {
@@ -63,28 +54,49 @@ router.get("/:id/images", requireAuth, ensureProduct, async (req, res, next) => 
 });
 
 // POST /api/admin/products/:id/images — upload one or more images (admin)
-// Multipart field name: "images" (accepts up to 10).
-router.post("/:id/images", requireAuth, ensureProduct, (req, res, next) => {
-  upload.array("images", 10)(req, res, async (err) => {
-    if (err) {
-      const msg = err.code === "LIMIT_FILE_SIZE"
-        ? "File too large (max 5 MB)."
-        : err.message || "Upload failed.";
-      return res.status(400).json({ error: msg });
-    }
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "No image file provided (field name: 'images')." });
-    }
-    try {
-      const alt = typeof req.body?.alt === "string" ? req.body.alt : req.product.name;
-      const created = [];
-      for (const f of req.files) {
-        const url = `/uploads/products/${f.filename}`;
-        created.push(await store.addProductImage(req.params.id, url, alt));
+// Multipart field name: "images" (accepts up to 10). Each file is validated,
+// streamed to Cloudinary, and recorded in the DB.
+router.post("/:id/images", requireAuth, ensureProduct, async (req, res, next) => {
+  // 1) Parse the multipart body into memory (no disk writes).
+  try {
+    await runUpload(imageUpload.array("images", 10), req, res);
+  } catch (err) {
+    return res.status(400).json({ error: uploadErrorMessage(err) });
+  }
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "No image file provided (field name: 'images')." });
+  }
+
+  // 2) Validate everything up front so a bad file never reaches Cloudinary and
+  //    we don't half-upload a batch.
+  for (const file of req.files) {
+    const problem = validateImageFile(file);
+    if (problem) return res.status(400).json({ error: problem });
+  }
+
+  // 3) Upload, then record. If a DB write fails we delete the asset we just
+  //    created, so Cloudinary never accumulates rows nothing points at.
+  const alt = typeof req.body?.alt === "string" ? req.body.alt : req.product.name;
+  const created = [];
+  try {
+    for (const file of req.files) {
+      const asset = await uploadBuffer(file.buffer, {
+        folder: FOLDERS.products,
+        publicId: assetId(`p${req.product.id}`),
+      });
+      try {
+        created.push(await store.addProductImage(req.params.id, asset.url, alt, asset.publicId));
+      } catch (dbErr) {
+        await destroyImage(asset.publicId);
+        throw dbErr;
       }
-      res.status(201).json(created);
-    } catch (e) { next(e); }
-  });
+    }
+    res.status(201).json(created);
+  } catch (err) {
+    // Storage not configured (503) or Cloudinary refused the upload (502).
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
 });
 
 // DELETE /api/admin/products/:id/images/:imageId — delete image (admin)
@@ -92,14 +104,8 @@ router.delete("/:id/images/:imageId", requireAuth, ensureProduct, async (req, re
   try {
     const removed = await store.deleteProductImage(req.params.id, req.params.imageId);
     if (!removed) return res.status(404).json({ error: "Image not found" });
-    // Remove the file from disk (best effort; only within the uploads dir).
-    if (removed.url && removed.url.startsWith("/uploads/products/")) {
-      const file = path.join(UPLOAD_DIR, path.basename(removed.url));
-      // path.basename strips any traversal; confirm it stays inside UPLOAD_DIR.
-      if (path.dirname(file) === UPLOAD_DIR) {
-        await fs.unlink(file).catch(() => {});
-      }
-    }
+    // The row is already gone; asset cleanup is best effort and never 500s.
+    await removeStoredImage(removed);
     res.status(204).end();
   } catch (err) { next(err); }
 });

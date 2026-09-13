@@ -37,6 +37,7 @@ Five tables (`src/db/schema.sql`):
 
 - **products** — catalog (price/stock/specs as JSONB), with `updated_at` trigger.
 - **product_images** — many images per product (`ON DELETE CASCADE`), ordered by `position`.
+  `url` holds the Cloudinary HTTPS URL, `cloudinary_public_id` the id used to delete the asset.
 - **customers** — deduplicated by unique `email`; upserted on each order.
 - **orders** — public order id as PK, a **shipping snapshot**, and server-computed amounts.
 - **order_items** — line items per order with **snapshotted** product name/price.
@@ -67,6 +68,53 @@ npm start                  # migrations also run automatically on boot
 > **Running Postgres in the dev sandbox:** a helper is provided at
 > `scripts/pg-start.sh` (initialises and starts a local PG 15 cluster and
 > creates the `voltedge` database).
+
+## Image storage (Cloudinary)
+
+Product and banner images are stored in **Cloudinary**, not on the server's disk,
+so uploads survive redeploys on hosts with an ephemeral filesystem (Railway,
+Render, Fly…). Multer keeps the upload in memory and the buffer is streamed
+straight to Cloudinary; the database stores only the returned `secure_url` plus
+the `public_id` needed to delete the asset again.
+
+```bash
+export CLOUDINARY_CLOUD_NAME=your-cloud
+export CLOUDINARY_API_KEY=...
+export CLOUDINARY_API_SECRET=...
+# optional, default "sinar-elektronik" — root folder for uploaded assets
+export CLOUDINARY_FOLDER=sinar-elektronik
+```
+
+- The SDK is configured once in `src/cloudinary.js`; nothing else calls `cloudinary.config()`.
+- Shared upload rules live in `src/upload.js`: **JPG / PNG / WebP only, max 5 MB**,
+  validated (including a magic-byte check) *before* anything is sent to Cloudinary.
+- Uploads land in `<CLOUDINARY_FOLDER>/products` and `<CLOUDINARY_FOLDER>/banners`.
+- Deleting or replacing an image also deletes the Cloudinary asset, so nothing
+  orphans. Asset cleanup is best effort and never fails the request.
+- **Without credentials** the app still boots and serves everything; only upload
+  routes respond `503` with a clear message.
+
+| Response | When |
+|---|---|
+| `400` | wrong type, mislabelled file, larger than 5 MB, or no file at all |
+| `502` | Cloudinary refused/dropped the upload |
+| `503` | `CLOUDINARY_*` env vars are not set |
+
+### Migrating pre-Cloudinary images
+
+Images uploaded before this change are still referenced as `/uploads/...` and are
+served by a legacy `express.static` mount, so existing links keep working. To move
+them over:
+
+```bash
+npm run migrate:images -- --dry-run   # report what would move
+npm run migrate:images                # upload + rewrite the DB rows
+```
+
+Re-runnable and non-destructive: rows already on Cloudinary are skipped, missing
+files are reported and skipped, and local files are left on disk. Once every row
+is migrated you can delete `server/uploads/` and the `/uploads` mount in
+`src/index.js`.
 
 ## Payments (Midtrans Snap — QRIS)
 
