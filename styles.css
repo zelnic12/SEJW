@@ -162,9 +162,15 @@ img { max-width: 100%; display: block; }
 .card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .card-media {
   position: relative;
-  font-size: 3.4rem; height: 160px; display: grid; place-items: center;
+  /* A ratio-based box keeps every card the same height while giving portrait
+     product photos more room than the old flat 160px. min-height is the
+     fallback for browsers without aspect-ratio support. */
+  aspect-ratio: 4 / 3; min-height: 150px;
+  font-size: 3.4rem; display: grid; place-items: center;
   background: var(--surface-secondary);
   border-bottom: 1px solid var(--border);
+  /* Never let an oversized image spill onto the card text (see below). */
+  overflow: hidden;
 }
 .card.is-out .card-media { opacity: .6; filter: grayscale(.5); }
 .stock-pill {
@@ -183,7 +189,12 @@ img { max-width: 100%; display: block; }
 }
 .add-btn:disabled { opacity: .5; cursor: not-allowed; }
 .add-btn:disabled:hover { background: var(--surface); border-color: var(--border); color: var(--primary); }
-.card-body { padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; flex: 1; }
+/* Sits above the (positioned) media box and is opaque, so card text can never
+   be painted over by artwork again. */
+.card-body {
+  position: relative; z-index: 1; background: var(--surface);
+  padding: 1rem 1.1rem 1.1rem; display: flex; flex-direction: column; gap: .35rem; flex: 1;
+}
 .card-cat { color: var(--text-secondary); font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 /* Product name: plain, always-visible text. It must never depend on :hover or a
    tap — there is no hover state on touch devices, so a reveal-on-hover name is
@@ -297,10 +308,13 @@ img { max-width: 100%; display: block; }
 
 .detail-body { display: grid; grid-template-columns: 1fr 1.15fr; gap: 1.8rem; padding: 1.8rem; }
 .detail-media {
+  position: relative; overflow: hidden;
   border-radius: var(--radius);
   background: var(--surface-secondary);
   border: 1px solid var(--border);
-  display: grid; place-items: center; min-height: 260px;
+  display: grid; place-items: center;
+  /* Square panel: a portrait photo can't stretch the modal any more. */
+  aspect-ratio: 1 / 1; min-height: 260px;
 }
 .detail-emoji { font-size: clamp(4rem, 14vw, 7rem); }
 
@@ -444,10 +458,31 @@ img { max-width: 100%; display: block; }
 }
 
 
-/* ---- Product images (storefront) ---- */
-.card-media img { width: 100%; height: 100%; object-fit: cover; }
+/* ---- Product images (storefront) ----
+ * Real uploaded photos come in any aspect ratio, so every media box pins its
+ * image with `position: absolute; inset: 0`. That's the important bit: on a
+ * centred grid item `height: 100%` resolves against an indefinite size and
+ * degrades to `auto`, so a tall photo renders at full natural height, escapes
+ * the box, and (because the box is positioned) paints straight over the card
+ * text below it. Absolute positioning gives the image a definite height, which
+ * is what makes object-fit actually do its job.
+ * `contain` rather than `cover`: supplier images often have the product name,
+ * badges or a logo inside the artwork, and cropping cuts them off. */
+.card-media > img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain; padding: .5rem;
+}
 .card-media .media-emoji { font-size: 3.4rem; }
-.cart-item-media img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-sm); }
+.cart-item-media {
+  position: relative; width: 48px; height: 48px; overflow: hidden;
+  border-radius: var(--radius-sm); display: grid; place-items: center;
+}
+.cart-item-media > img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain; border-radius: var(--radius-sm);
+}
 .cart-item-media .media-emoji { font-size: 1.8rem; }
 
 /* Cart line item sale price */
@@ -456,14 +491,19 @@ img { max-width: 100%; display: block; }
 
 /* ---- Detail image gallery ---- */
 .detail-gallery { display: flex; flex-direction: column; gap: .8rem; }
-.detail-media .detail-main-img { width: 100%; height: 100%; object-fit: contain; }
+.detail-media > .detail-main-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain; padding: 1rem;
+}
 .detail-thumbs { display: flex; gap: .55rem; flex-wrap: wrap; }
 .detail-thumb {
   width: 64px; height: 64px; border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface-secondary); overflow: hidden; cursor: pointer; padding: 0;
   display: grid; place-items: center; transition: border-color .15s ease;
 }
-.detail-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.detail-thumb { position: relative; }
+.detail-thumb > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .detail-thumb .media-emoji { font-size: 1.6rem; }
 .detail-thumb:hover { border-color: var(--primary); }
 .detail-thumb.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
