@@ -20,6 +20,7 @@ import { publicBannersRouter, adminBannersRouter } from "./routes/banners.js";
 import brandLogosRouter from "./routes/brand-logos.js";
 import { publicAftersalesRouter, adminAftersalesRouter } from "./routes/aftersales.js";
 import importsRouter from "./routes/imports.js";
+import categoriesRouter from "./routes/categories.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,8 @@ app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date().t
 // ---- API routes ----
 app.use("/api/auth", authRouter);
 app.use("/api/products", productsRouter);
+// Categories: public list (name + count + custom icon), admin-only icon upload.
+app.use("/api/categories", categoriesRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/store-settings", storeSettingsRouter);
 // Admin image management (upload/delete/set-main/reorder). Auth enforced inside.

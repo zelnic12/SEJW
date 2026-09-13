@@ -26,6 +26,7 @@
         <button class="admin-nav-item" data-view="products">📦 <span>Products</span></button>
         <button class="admin-nav-item" data-view="out-of-stock">⚠️ <span>Out of stock</span><span class="nav-badge" id="outOfStockBadge" hidden>0</span></button>
         <button class="admin-nav-item" data-view="import">⬆️ <span>Import products</span></button>
+        <button class="admin-nav-item" data-view="categories">🗂️ <span>Categories</span></button>
         <button class="admin-nav-item" data-view="orders">🧾 <span>Orders</span></button>
         <button class="admin-nav-item" data-view="promos">🏷️ <span>Promo codes</span></button>
         <button class="admin-nav-item" data-view="banners">🖼️ <span>Homepage banners</span></button>
@@ -53,6 +54,9 @@
   <!-- Toast host -->
   <div id="toastHost" class="toast-host"></div>
 
+  <!-- Same generic category icons the storefront uses, so the Categories screen
+       previews exactly what shoppers see when no photo has been uploaded. -->
+  <script src="category-icons.js"></script>
   <script type="module" src="admin/admin.js"></script>
 </body>
 </html>

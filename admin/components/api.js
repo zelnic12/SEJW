@@ -50,11 +50,12 @@ async function request(path, { method = "GET", body, authRequired = true } = {})
 }
 
 // Multipart upload (FormData) with the auth header — used for image uploads.
-async function uploadForm(path, formData) {
+// `method` is configurable because some endpoints upsert with PUT.
+async function uploadForm(path, formData, method = "POST") {
   const headers = {};
   const token = auth.getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: formData });
+  const res = await fetch(`${BASE}${path}`, { method, headers, body: formData });
   if (res.status === 401) {
     auth.clear();
     if (onUnauthorized) onUnauthorized();
@@ -99,6 +100,15 @@ export const api = {
   listConversations: () => request("/admin/chat/conversations"),
   getConversation: id => request(`/admin/chat/conversations/${id}/messages`),
   replyConversation: (id, body) => request(`/admin/chat/conversations/${id}/messages`, { method: "POST", body: { body } }),
+
+  // Categories + custom icons
+  listCategories: () => request("/categories"),
+  uploadCategoryIcon: (name, file) => {
+    const fd = new FormData();
+    fd.append("icon", file);
+    return uploadForm(`/categories/${encodeURIComponent(name)}/icon`, fd, "PUT");
+  },
+  deleteCategoryIcon: name => request(`/categories/${encodeURIComponent(name)}/icon`, { method: "DELETE" }),
 
   // Bulk product import (admin)
   parseProductImport: file => {

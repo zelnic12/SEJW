@@ -614,3 +614,33 @@ button.admin-back {
   padding: .2rem .4rem; border-radius: 999px;
   background: var(--danger); color: #fff;
 }
+
+
+/* ---- Categories (custom icon per category) ---- */
+.cat-admin-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: .8rem; padding: 0 1.1rem 1.2rem;
+}
+.cat-admin-card {
+  display: grid; grid-template-columns: 56px 1fr; grid-template-areas:
+    "icon meta"
+    "actions actions"
+    "error error";
+  align-items: center; gap: .6rem .8rem;
+  padding: .9rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+}
+/* Mirrors the storefront tile: circular, cropped, photo replaces the glyph. */
+.cat-admin-icon {
+  grid-area: icon;
+  position: relative; overflow: hidden;
+  display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%;
+  background: var(--primary-light); color: var(--primary);
+}
+.cat-admin-icon.has-photo { background: var(--surface-secondary); }
+.cat-admin-icon > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cat-admin-icon .cat-icon { width: 26px; height: 26px; }
+.cat-admin-meta { grid-area: meta; display: flex; flex-direction: column; min-width: 0; }
+.cat-admin-meta strong { overflow-wrap: anywhere; }
+.cat-admin-actions { grid-area: actions; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.cat-admin-error { grid-area: error; margin: 0; }

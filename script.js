@@ -80,20 +80,45 @@ function renderProducts() {
 // ---- Quick category navigation (icon + label row) ----
 // Built from the catalog, so a category added to a product later shows up here
 // automatically. Each tile links to that category's pre-filtered listing page.
-function renderCategoryRow() {
+async function renderCategoryRow() {
   const row = $("#categoryIconRow");
   if (!row) return;
-  const groups = window.SiteHeader.groupBy(PRODUCTS, "category");
-  if (!groups.length) {
+
+  // Names, counts and any admin-uploaded icon come from one call. If it fails,
+  // fall back to deriving names/counts from the catalog we already hold, with
+  // the generic icons — the row still works, just without custom photos.
+  let categories = null;
+  try {
+    const res = await fetch(`${API_BASE}/categories`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) categories = data;
+    }
+  } catch { /* fall back below */ }
+  if (!categories) {
+    categories = window.SiteHeader.groupBy(PRODUCTS, "category")
+      .map(g => ({ name: g.name, productCount: g.count, iconUrl: null }));
+  }
+
+  if (!categories.length) {
     row.closest(".cat-nav-section")?.setAttribute("hidden", "");
     return;
   }
-  row.innerHTML = groups.map(g => `
-    <a class="cat-tile" href="${window.SiteHeader.categoryUrl(g.name)}">
-      <span class="cat-tile-icon">${window.CategoryIcons.iconFor(g.name)}</span>
-      <span class="cat-tile-name">${esc(g.name)}</span>
-      <span class="cat-tile-count">${g.count} item${g.count === 1 ? "" : "s"}</span>
-    </a>`).join("");
+
+  row.innerHTML = categories.map(c => {
+    // The custom photo replaces the glyph only — the name and count below are
+    // always rendered. alt="" because that name sits right underneath.
+    const visual = c.iconUrl
+      ? `<img class="cat-tile-photo" src="${esc(c.iconUrl)}" alt="" loading="lazy" />`
+      : window.CategoryIcons.iconFor(c.name);
+    const count = Number(c.productCount) || 0;
+    return `
+    <a class="cat-tile" href="${window.SiteHeader.categoryUrl(c.name)}">
+      <span class="cat-tile-icon ${c.iconUrl ? "has-photo" : ""}">${visual}</span>
+      <span class="cat-tile-name">${esc(c.name)}</span>
+      <span class="cat-tile-count">${count} item${count === 1 ? "" : "s"}</span>
+    </a>`;
+  }).join("");
 }
 
 // ---- Exclusive deals ----
