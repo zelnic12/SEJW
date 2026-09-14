@@ -5,6 +5,8 @@
 // Exposed on window.CartUI.
 (function () {
   const STORAGE_KEY = "voltedge_cart";
+  const NOTES_KEY = "voltedge_cart_notes";
+  const NOTE_MAX = 200;
   // Shipping depends on the delivery kecamatan chosen at checkout (or is nil for
   // in-store pickup), so the drawer can't know it yet — it shows the subtotal and
   // defers the fee. The server prices it authoritatively when the order is placed.
@@ -24,9 +26,33 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cart));
   }
 
+  // ---- Per-item notes ----
+  // Optional free-text request per product, kept in its own { id: note } map so
+  // the cart's { id: qty } shape is untouched. This mirrors the same three
+  // constants/functions in cart-core.js (which serves checkout) the way the cart
+  // storage above already does — keep NOTES_KEY and NOTE_MAX in step.
+  function readNotes() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(NOTES_KEY) || "{}");
+      return raw && typeof raw === "object" ? raw : {};
+    } catch { return {}; }
+  }
+  function saveNote(id, text) {
+    const notes = readNotes();
+    const clean = String(text ?? "").slice(0, NOTE_MAX);
+    if (clean.trim()) notes[String(id)] = clean;
+    else delete notes[String(id)];
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+  }
+
   function entries() {
+    const notes = readNotes();
     return Object.entries(cart)
-      .map(([id, qty]) => ({ product: getProduct(id), qty }))
+      .map(([id, qty]) => ({
+        product: getProduct(id),
+        qty,
+        note: typeof notes[String(id)] === "string" ? notes[String(id)] : "",
+      }))
       .filter(e => e.product);
   }
 
@@ -44,7 +70,7 @@
   function changeQty(id, delta) {
     const product = getProduct(id);
     const next = (cart[id] || 0) + delta;
-    if (next <= 0) delete cart[id];
+    if (next <= 0) { delete cart[id]; saveNote(id, ""); }
     else cart[id] = product ? Math.min(product.stock, next) : next;
     save();
     render();
@@ -52,6 +78,8 @@
 
   function remove(id) {
     delete cart[id];
+    // The note belongs to the line item, so it goes with it.
+    saveNote(id, "");
     save();
     render();
   }
@@ -79,7 +107,7 @@
       return;
     }
 
-    container.innerHTML = list.map(({ product, qty }) => {
+    container.innerHTML = list.map(({ product, qty, note }) => {
       const atMax = qty >= product.stock;
       const unit = priceOf(product);
       const d = discountInfo(product);
@@ -101,12 +129,23 @@
           ${atMax ? `<div class="qty-max-note">Max stock reached</div>` : ""}
         </div>
         <strong>${money(unit * qty)}</strong>
+        <label class="item-note">
+          <span class="sr-only">Catatan untuk ${esc(product.name)}</span>
+          <input type="text" data-note="${product.id}" maxlength="${NOTE_MAX}"
+                 value="${esc(note || "")}"
+                 placeholder="Catatan untuk produk ini (contoh: warna/ukuran yang diinginkan)" />
+        </label>
       </div>`;
     }).join("");
 
     container.querySelectorAll("[data-inc]").forEach(b => b.addEventListener("click", () => changeQty(Number(b.dataset.inc), 1)));
     container.querySelectorAll("[data-dec]").forEach(b => b.addEventListener("click", () => changeQty(Number(b.dataset.dec), -1)));
     container.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => remove(Number(b.dataset.remove))));
+    // Save on input only — re-rendering here would destroy the field being typed
+    // into. Quantity changes re-render and read the note back from storage.
+    container.querySelectorAll("[data-note]").forEach(input => {
+      input.addEventListener("input", () => saveNote(input.dataset.note, input.value));
+    });
   }
 
   function open() {

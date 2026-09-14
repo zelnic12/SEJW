@@ -148,16 +148,37 @@ function renderSummary() {
   const shipping = zone ? zone.shippingFee : 0;
   const total = +(discountedSubtotal + shipping).toFixed(2);
 
-  $("#summaryItems").innerHTML = entries.map(({ product, qty }) => `
+  // The real product photo, resolved exactly as the catalog cards and cart
+  // drawer do (window.ProductCard), falling back to the emoji glyph only when a
+  // product genuinely has no uploaded image.
+  const PC = window.ProductCard;
+  const media = product => PC
+    ? PC.imageMarkup(PC.primaryImage(product), product.emoji)
+    : `<span class="media-emoji">${VE.esc(product.emoji || "📦")}</span>`;
+
+  $("#summaryItems").innerHTML = entries.map(({ product, qty, note }) => `
     <div class="summary-item">
-      <span class="summary-item-emoji">${product.emoji}</span>
+      <div class="summary-item-media">${media(product)}</div>
       <div class="summary-item-info">
         <span class="summary-item-name">${VE.esc(product.name)}</span>
         <span class="summary-item-qty">Qty ${qty} × ${VE.money(product.price)}</span>
       </div>
       <strong>${VE.money(product.price * qty)}</strong>
+      <label class="item-note">
+        <span class="sr-only">Catatan untuk ${VE.esc(product.name)}</span>
+        <input type="text" data-note="${product.id}" maxlength="${VE.NOTE_MAX}"
+               value="${VE.esc(note || "")}"
+               placeholder="Catatan untuk produk ini (contoh: warna/ukuran yang diinginkan)" />
+      </label>
     </div>
   `).join("");
+
+  // Persist as they type. Deliberately does NOT re-render: renderSummary()
+  // rebuilds this list, which would destroy the input mid-keystroke. Values are
+  // read back from storage whenever something else triggers a re-render.
+  $("#summaryItems").querySelectorAll("[data-note]").forEach(input => {
+    input.addEventListener("input", () => VE.saveNote(input.dataset.note, input.value));
+  });
 
   $("#sumSubtotal").textContent = VE.money(subtotal);
   // Promo discount row (only when a code is applied).
@@ -250,8 +271,10 @@ function buildOrder(customer, totals) {
         Math.random().toString(36).slice(2, 6).toUpperCase(),
     createdAt: new Date().toISOString(),
     customer,
-    items: totals.entries.map(({ product, qty }) => ({
+    items: totals.entries.map(({ product, qty, note }) => ({
       id: product.id, name: product.name, price: product.price, qty,
+      // Optional per-item request; the server trims, caps and stores it.
+      note: note || null,
     })),
     amounts: {
       subtotal: totals.subtotal,
@@ -453,6 +476,28 @@ function showConfirmation(order, { pending = false } = {}) {
     // The kecamatan comes back from the server as part of the verified zone.
     $("#confirmAddress").textContent =
       [c.address, c.district, c.city, c.postal, c.country].filter(Boolean).join(", ");
+  }
+
+  // What was ordered, from the SERVER's copy of the order — so the names, prices
+  // and notes shown are the ones that were actually persisted.
+  const itemsEl = $("#confirmItems");
+  if (itemsEl) {
+    const PC = window.ProductCard;
+    itemsEl.innerHTML = (order.items || []).map(it => {
+      const media = PC
+        ? PC.imageMarkup(it.image || (it.emoji ? `emoji:${it.emoji}` : ""), it.emoji || "📦")
+        : `<span class="media-emoji">${VE.esc(it.emoji || "📦")}</span>`;
+      return `
+        <div class="confirm-item">
+          <div class="confirm-item-media">${media}</div>
+          <div class="confirm-item-info">
+            <span class="confirm-item-name">${VE.esc(it.name)}</span>
+            <span class="confirm-item-qty">Qty ${it.qty} × ${VE.money(it.price)}</span>
+            ${it.note ? `<span class="item-note-shown"><strong>Catatan:</strong> ${VE.esc(it.note)}</span>` : ""}
+          </div>
+          <strong>${VE.money(it.price * it.qty)}</strong>
+        </div>`;
+    }).join("");
   }
 
   // Tailor the heading/subtext for a pending QRIS payment vs. a completed one.
