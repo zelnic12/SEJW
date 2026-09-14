@@ -138,13 +138,43 @@ Behaviour:
 
 - **No `MIDTRANS_SERVER_KEY`** → gateway is disabled. Orders are still placed
   (with `payment_status = 'unconfigured'`, no token) so local dev/demos work
-  without live credentials.
+  without live credentials. `POST /api/orders` reports this as
+  `paymentRequired: false`, and the confirmation screen says *"Order received"*
+  with an **Amount due** — it never claims a payment was received.
 - **`MIDTRANS_IS_PRODUCTION` defaults to `false`** (sandbox), so local dev never
   accidentally hits production.
-- Gateway errors during checkout are **non-fatal**: the order (with reserved
-  stock and fixed totals) is preserved; the client can retry payment.
+- **A gateway error during checkout is fatal to the request.** Without a Snap
+  token there is nothing for the customer to pay against, so the server does not
+  answer `201`. Instead it cancels the order (`status = 'cancelled'`,
+  `payment_status = 'failed'`), releases the reserved stock, raises no "new order"
+  notification, and returns **`502`** with
+  `{ error: "Gagal memproses pembayaran, coba lagi atau hubungi kami.", paymentFailed: true, orderId }`.
+  The customer sees that message with their cart intact and can retry.
 - The Snap token + status are stored on the order (`payment_token`,
   `payment_redirect_url`, `payment_status`).
+- **Only the webhook marks an order paid.** `payment_status = 'paid'` is written
+  in exactly one place (`store.applyPaymentNotification`, called only from the
+  signature-verified `POST /api/payments/notification`). Nothing in the browser
+  can put an order into a paid state.
+
+### Testing the payment failure path
+
+```bash
+npm run test:payment-failure
+```
+
+Boots the API with the gateway enabled behind a stub key and forces
+`snap.createTransaction()` to fail — the automated equivalent of temporarily
+configuring an invalid key — then asserts the order ends up clearly failed and
+never silently paid (API status, DB state, admin detail, invoice JSON and the
+rendered invoice PDF). It also runs a control case with a working token to check
+the happy path still reaches `awaiting_payment`.
+
+It writes real rows, so point it at a throwaway database:
+
+```bash
+npm run db:setup && npm run test:payment-failure
+```
 
 ## API reference
 

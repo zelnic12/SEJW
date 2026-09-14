@@ -88,6 +88,14 @@ export async function createSnapTransaction(order) {
   };
 
   const result = await snap.createTransaction(parameter);
+
+  // A resolved call with no token is still a failure: there would be nothing for
+  // the customer to pay against. Throw so callers have one failure mode to
+  // handle instead of also having to check the shape of a "successful" result.
+  if (!result || !result.token) {
+    throw new Error("Midtrans returned no Snap token for this transaction");
+  }
+
   return { token: result.token, redirectUrl: result.redirect_url };
 }
 

@@ -173,12 +173,15 @@
     <!-- Order confirmation screen -->
     <div id="confirmationView" class="confirmation" hidden>
       <div class="confirm-check">✓</div>
-      <h1 id="confirmTitle">Payment received — thank you!</h1>
-      <p class="confirm-sub" id="confirmSub">Your order is confirmed and will be processed shortly.</p>
+      <!-- Neutral defaults: showConfirmation() always overwrites these with copy
+           matching the real payment state, and the fallback must never be the
+           one that claims money changed hands. -->
+      <h1 id="confirmTitle">Order received — thank you!</h1>
+      <p class="confirm-sub" id="confirmSub">Your order has been received.</p>
       <div class="confirm-card">
         <div class="confirm-row"><span>Invoice number</span><strong id="confirmInvoiceNo">—</strong></div>
         <div class="confirm-row"><span>Order number</span><strong id="confirmOrderId">—</strong></div>
-        <div class="confirm-row"><span>Amount paid</span><strong id="confirmTotal">—</strong></div>
+        <div class="confirm-row"><span id="confirmTotalLabel">Amount paid</span><strong id="confirmTotal">—</strong></div>
         <div class="confirm-row"><span>Confirmation sent to</span><strong id="confirmEmail">—</strong></div>
         <div class="confirm-row"><span>Fulfillment</span><strong id="confirmMethod">—</strong></div>
         <div class="confirm-row" id="confirmAddressRow"><span id="confirmAddressLabel">Shipping to</span><strong id="confirmAddress">—</strong></div>

@@ -63,17 +63,17 @@ async function loadShippingZones() {
 /* =========================================================================
  * Payment abstraction
  * -------------------------------------------------------------------------
- * A PaymentProvider isolates payment handling so a real gateway (Stripe,
- * PayPal, Adyen, etc.) can be dropped in later WITHOUT touching the checkout
- * flow. To integrate a gateway:
- *   1. Implement a provider with the same three methods below.
- *   2. Swap the `activeProvider` assignment near the bottom of this file.
- * The checkout flow only ever talks to this interface, never to a gateway
- * directly.
+ * A PaymentProvider owns only the in-form payment UI. It deliberately does NOT
+ * own authorisation:
  *
- *   mount(el, ctx)   -> render payment UI into `el` (card fields, wallet, …)
+ *   mount(el, ctx)   -> render payment UI into `el` (notes, card fields, …)
  *   validate()       -> { ok: boolean, message?: string }
- *   pay(order)       -> Promise<{ success, transactionId?, error? }>
+ *
+ * There is no pay() in this contract, by design. Money is moved by Midtrans
+ * Snap (see payWithSnap) and the result is only ever believed when the Midtrans
+ * webhook tells the server about it. A provider method that resolves
+ * "successful" in the browser would let a client-side outcome mark an order
+ * paid, which is the one thing this flow must never allow.
  * ========================================================================= */
 
 // Fallback provider used when no payment gateway is configured: the order is
@@ -93,30 +93,17 @@ const MockPaymentProvider = {
   validate() {
     return { ok: true };
   },
-  async pay(order) {
-    // Simulate network latency of a real gateway call.
-    await new Promise(r => setTimeout(r, 900));
-    return {
-      success: true,
-      transactionId: "TXN-" + Math.random().toString(36).slice(2, 10).toUpperCase(),
-      order,
-    };
-  },
+  // Deliberately NO pay(): this provider used to simulate a successful charge and
+  // hand back a fake transaction id. Nothing called it, but a method that returns
+  // { success: true } without money moving has no business existing in a
+  // checkout. Real payments go through Midtrans Snap (payWithSnap) and are
+  // confirmed server-side by the webhook.
 };
 
-/* Example scaffold for a future real provider — kept as a template, unused.
-const StripePaymentProvider = {
-  id: "stripe",
-  mount(el, ctx) { /* mount Stripe Elements into el * / },
-  validate() { /* check the card element * / return { ok: true }; },
-  async pay(order) {
-    // const res = await fetch("/api/create-payment-intent", { ... });
-    // const { clientSecret } = await res.json();
-    // const result = await stripe.confirmCardPayment(clientSecret, { ... });
-    // return { success: !result.error, transactionId: result.paymentIntent?.id };
-  },
-};
-*/
+// To add another gateway, implement mount()/validate() for its in-form UI and
+// do the authorisation server-side alongside the existing Midtrans handling in
+// server/src/payment/ plus a signature-verified webhook. Don't reintroduce a
+// client-side pay().
 
 // The provider currently in use. Swap this line to change gateways.
 const activeProvider = MockPaymentProvider;
@@ -352,14 +339,26 @@ async function handleSubmit(e) {
 
     localStorage.setItem("voltedge_last_order", JSON.stringify(body));
 
-    // If Midtrans returned a Snap token, open the QRIS payment popup. Otherwise
-    // (gateway not configured) the order is placed and payment is settled out of
-    // band, so go straight to the confirmation screen.
+    // There are exactly two legitimate outcomes here:
+    //   1. a Snap token → open the QRIS popup; only a real payment gets the
+    //      customer to a confirmed state (and the webhook is what marks the
+    //      order paid server-side)
+    //   2. no gateway configured → the order is placed and payment is settled
+    //      out of band, so the confirmation screen is correct
+    // Anything else means payment setup failed. The server already returns a
+    // non-2xx in that case (handled above), so this is defence in depth: never
+    // fall through to the confirmation screen just because a token is missing.
     if (body.snapToken) {
       await payWithSnap(body, restoreButton);
-    } else {
+    } else if (body.paymentRequired === false) {
       VE.clearCart();
-      showConfirmation(body);
+      // Placed, but nothing has been paid — say so rather than thanking them
+      // for a payment that never happened.
+      showConfirmation(body, { payment: "unpaid" });
+    } else {
+      // Deliberately does NOT clear the cart — the customer hasn't paid and
+      // should be able to try again with their basket intact.
+      throw new Error("Gagal memproses pembayaran, coba lagi atau hubungi kami.");
     }
   } catch (err) {
     $("#formError").textContent = err.message || "Something went wrong. Please try again.";
@@ -423,12 +422,12 @@ async function payWithSnap(order, restoreButton) {
     onSuccess() {
       clearPayStatus();
       VE.clearCart();
-      showConfirmation(order);
+      showConfirmation(order, { payment: "paid" });
     },
     // QRIS can take a moment to confirm — treat as placed-but-awaiting.
     onPending() {
       VE.clearCart();
-      showConfirmation(order, { pending: true });
+      showConfirmation(order, { payment: "pending" });
     },
     // Payment failed — keep the order, let them retry.
     onError() {
@@ -454,7 +453,15 @@ function wireRetry(order, restoreButton) {
 /* =========================================================================
  * Confirmation screen
  * ========================================================================= */
-function showConfirmation(order, { pending = false } = {}) {
+// `payment` says what we actually know about the money, and nothing else may
+// imply it:
+//   "paid"    – Snap reported a completed payment (webhook confirms server-side)
+//   "pending" – placed, payment started but not yet confirmed (QRIS lag)
+//   "unpaid"  – placed with no gateway configured; settled out of band
+// It is never inferred, so a payment problem can't silently render as "paid".
+// The default is the most conservative claim, so forgetting to pass it can only
+// ever understate what happened, never overstate it.
+function showConfirmation(order, { payment = "unpaid" } = {}) {
   const c = order.customer;
   $("#confirmInvoiceNo").textContent = order.invoiceNo || order.id;
   $("#confirmOrderId").textContent = order.id;
@@ -500,16 +507,32 @@ function showConfirmation(order, { pending = false } = {}) {
     }).join("");
   }
 
-  // Tailor the heading/subtext for a pending QRIS payment vs. a completed one.
+  // Heading, subtext and the amount label all follow the payment state, so the
+  // screen can't congratulate someone on a payment that never happened.
+  const COPY = {
+    paid: {
+      title: "Payment received — thank you!",
+      sub: "Your order is confirmed and will be processed shortly.",
+      amount: "Amount paid",
+    },
+    pending: {
+      title: "Almost done — complete your payment",
+      sub: "We've received your order. Please finish the QRIS payment; it can take a moment to confirm. We'll process your order once payment is received.",
+      amount: "Amount due",
+    },
+    unpaid: {
+      title: "Order received — thank you!",
+      sub: "Pesanan Anda sudah kami terima. Pembayaran dikonfirmasi terpisah — tim kami akan menghubungi Anda untuk menyelesaikannya.",
+      amount: "Amount due",
+    },
+  };
+  const copy = COPY[payment] || COPY.unpaid;
   const titleEl = $("#confirmTitle");
   const subEl = $("#confirmSub");
-  if (pending) {
-    if (titleEl) titleEl.textContent = "Almost done — complete your payment";
-    if (subEl) subEl.textContent = "We've received your order. Please finish the QRIS payment; it can take a moment to confirm. We'll process your order once payment is received.";
-  } else {
-    if (titleEl) titleEl.textContent = "Payment received — thank you!";
-    if (subEl) subEl.textContent = "Your order is confirmed and will be processed shortly.";
-  }
+  const amountLabel = $("#confirmTotalLabel");
+  if (titleEl) titleEl.textContent = copy.title;
+  if (subEl) subEl.textContent = copy.sub;
+  if (amountLabel) amountLabel.textContent = copy.amount;
 
   // Invoice links use the per-order access token so the (unauthenticated)
   // customer can view only their own invoice.
