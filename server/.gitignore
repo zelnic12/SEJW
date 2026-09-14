@@ -6,3 +6,7 @@ npm-debug.log*
 # Note: this is the runtime store at server/data, NOT server/src/data (seed source).
 /data/
 *.log
+
+# Frontend copied in from the repo root by scripts/copy-frontend.js on every
+# start — generated output, not a source of truth.
+/public/
