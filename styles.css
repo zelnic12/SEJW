@@ -1193,7 +1193,12 @@ img { max-width: 100%; display: block; }
 
 .static-head { margin: 1rem 0 1.5rem; }
 .static-head h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.02em; }
+/* Issuing entity, directly under the document title. */
+.static-org { color: var(--text-primary); font-weight: 600; margin-top: .35rem; }
 .static-meta { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+
+/* Opening paragraph — slightly larger than body copy, no section rule above it. */
+.static-lede { font-size: 1rem; color: var(--text-secondary); line-height: 1.75; max-width: 68ch; }
 
 /* ---- Long-form body copy ---- */
 .static-body { color: var(--text); }
@@ -1244,6 +1249,32 @@ img { max-width: 100%; display: block; }
   color: var(--text-secondary); font-size: .92rem; line-height: 1.65;
 }
 .static-note strong { color: var(--text-primary); }
+
+/* Contact block closing a policy page — boxed, so it reads as reference details
+   rather than as another clause. Its <dl> overrides the body dl spacing. */
+.static-contact {
+  margin-top: 2.5rem; padding: 1.3rem 1.4rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-secondary);
+}
+.static-body .static-contact h2 {
+  margin: 0 0 .9rem; padding: 0; border-top: none;
+  font-size: 1.05rem; font-weight: 800;
+}
+.static-body .static-contact dl {
+  display: grid; grid-template-columns: auto 1fr; gap: .5rem 1.1rem;
+  margin: 0; max-width: none;
+}
+.static-body .static-contact dt {
+  margin: 0; font-weight: 600; color: var(--text-secondary); font-size: .88rem; white-space: nowrap;
+}
+.static-body .static-contact dd {
+  margin: 0; color: var(--text-primary); font-size: .92rem; line-height: 1.6;
+}
+@media (max-width: 560px) {
+  .static-body .static-contact dl { grid-template-columns: 1fr; gap: .1rem; }
+  .static-body .static-contact dt { margin-top: .7rem; }
+}
 
 /* Cross-links between the policy pages, shown under the content. */
 .static-related { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
