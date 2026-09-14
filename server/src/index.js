@@ -22,6 +22,7 @@ import { publicAftersalesRouter, adminAftersalesRouter } from "./routes/aftersal
 import importsRouter from "./routes/imports.js";
 import categoriesRouter from "./routes/categories.js";
 import { publicShippingZonesRouter, adminShippingZonesRouter } from "./routes/shipping-zones.js";
+import notificationsRouter from "./routes/notifications.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -91,6 +92,9 @@ app.use("/api/admin/aftersales", requireAuth, adminAftersalesRouter);
 app.use("/api/admin/imports", requireAuth, importsRouter);
 // Analytics are admin-only — protected at the mount point.
 app.use("/api/analytics", requireAuth, analyticsRouter);
+
+// New-order / new-message feed for the dashboard's notification bell.
+app.use("/api/admin/notifications", requireAuth, notificationsRouter);
 
 // ---- Unknown API routes → 404 JSON (before static fallback) ----
 app.use("/api", (req, res) => {

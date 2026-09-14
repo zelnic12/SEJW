@@ -4,12 +4,33 @@ import crypto from "node:crypto";
 import * as store from "../store.js";
 import { requireAuth } from "../auth.js";
 import { createSnapTransaction, getClientConfig, isPaymentEnabled } from "../payment/midtrans.js";
+import { formatMoney } from "../money.js";
 
 const router = Router();
 
 // Shipping is priced per Jabodetabek kecamatan (shipping_zones) and looked up
 // server-side; client-supplied amounts are never trusted. No tax is charged.
 const round2 = n => Math.round(n * 100) / 100;
+
+// Raise the "new order" bell notification. The text is composed here (rather
+// than at render time) so it stays accurate even if the order is later edited or
+// deleted. store.notifyQuietly swallows its own failures; the currency read is
+// guarded separately so a settings hiccup can't break order placement either.
+async function notifyNewOrder(saved) {
+  try {
+    const settings = await store.getStoreSettings();
+    const total = formatMoney(settings?.currency || "IDR", saved.amounts.total);
+    const method = saved.fulfillmentMethod === "pickup" ? "Self pickup" : "Delivery";
+    await store.notifyQuietly({
+      type: "new_order",
+      referenceId: saved.id,
+      title: `New order ${saved.id}`,
+      body: `${saved.customer.name} · ${total} · ${method}`,
+    });
+  } catch (err) {
+    console.error(`Could not notify about order ${saved?.id}:`, err?.message || err);
+  }
+}
 
 function validateCustomer(c, method = "delivery") {
   const errors = [];
@@ -214,6 +235,11 @@ router.post("/", async (req, res, next) => {
       }
       throw e;
     }
+
+    // Tell the admin dashboard about it. Outside createOrder's transaction and
+    // non-throwing by design: a notification is never worth rolling back a paid
+    // order, reserved stock and a redeemed promo code.
+    await notifyNewOrder(saved);
 
     // Create the Midtrans Snap transaction AFTER the order is persisted, using
     // the order's own id as order_id and the SERVER-computed total as

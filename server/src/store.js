@@ -781,8 +781,12 @@ export async function getConversationForToken(id, token) {
 }
 
 // Append a message from either side and bump counters/timestamps atomically.
+//
+// This is the single chokepoint for every chat message, from both customer entry
+// points (starting a conversation with a first message, and posting into an
+// existing one), so it's also where the admin notification is raised.
 export async function addChatMessage(conversationId, sender, body) {
-  return withTransaction(async (client) => {
+  const { message, customerName } = await withTransaction(async (client) => {
     const { rows } = await client.query(
       `INSERT INTO chat_messages (conversation_id, sender, body) VALUES ($1,$2,$3) RETURNING *`,
       [Number(conversationId), sender, body]
@@ -791,12 +795,28 @@ export async function addChatMessage(conversationId, sender, body) {
     const bump = sender === "customer"
       ? "admin_unread = admin_unread + 1"
       : "customer_unread = customer_unread + 1";
-    await client.query(
-      `UPDATE chat_conversations SET last_message_at = now(), ${bump} WHERE id = $1`,
+    // RETURNING the name saves a second query for the notification text.
+    const { rows: conv } = await client.query(
+      `UPDATE chat_conversations SET last_message_at = now(), ${bump} WHERE id = $1
+       RETURNING customer_name`,
       [Number(conversationId)]
     );
-    return mapMessage(rows[0]);
+    return { message: mapMessage(rows[0]), customerName: conv[0]?.customer_name ?? "A customer" };
   });
+
+  // Raised AFTER the transaction commits and deliberately swallowed on failure:
+  // a missed bell notification is an annoyance, losing the customer's message
+  // would not be. Admin replies never notify the admin about themselves.
+  if (sender === "customer") {
+    await notifyQuietly({
+      type: "new_message",
+      referenceId: String(conversationId),
+      title: `New message from ${customerName}`,
+      body: body.length > 120 ? `${body.slice(0, 119)}…` : body,
+    });
+  }
+
+  return message;
 }
 
 // List messages for a conversation (optionally only those after `afterId` for
@@ -833,6 +853,89 @@ export async function getConversation(id) {
 // Clear the admin's unread counter (they've viewed the customer messages).
 export async function markAdminRead(conversationId) {
   await query("UPDATE chat_conversations SET admin_unread = 0 WHERE id = $1", [Number(conversationId)]);
+}
+
+
+// ============================================================================
+// Admin notifications — new orders + new customer chat messages.
+// Written from the existing creation paths (POST /api/orders and
+// addChatMessage above); read by the dashboard's notification bell.
+// ============================================================================
+
+function mapNotification(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    referenceId: row.reference_id,
+    title: row.title,
+    body: row.body,
+    isRead: row.is_read,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+  };
+}
+
+export async function createNotification({ type, referenceId, title, body = "" }) {
+  const { rows } = await query(
+    `INSERT INTO admin_notifications (type, reference_id, title, body)
+     VALUES ($1,$2,$3,$4) RETURNING *`,
+    [type, String(referenceId), title, body]
+  );
+  return mapNotification(rows[0]);
+}
+
+/**
+ * Raise a notification without ever letting it break the thing that triggered it.
+ *
+ * Every caller is a side effect of an action that has already succeeded (an order
+ * is placed, a message is stored), so a failure here must be logged and dropped
+ * rather than propagated.
+ */
+export async function notifyQuietly(payload) {
+  try {
+    return await createNotification(payload);
+  } catch (err) {
+    console.error("Could not write admin notification:", err?.message || err);
+    return null;
+  }
+}
+
+// Newest first. `unreadOnly` backs the dashboard's poll; `limit` keeps the
+// payload small since the bell only ever shows a recent slice.
+export async function listNotifications({ unreadOnly = false, limit = 20 } = {}) {
+  const capped = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const { rows } = await query(
+    `SELECT * FROM admin_notifications
+      ${unreadOnly ? "WHERE is_read = false" : ""}
+      ORDER BY created_at DESC, id DESC
+      LIMIT $1`,
+    [capped]
+  );
+  return rows.map(mapNotification);
+}
+
+export async function countUnreadNotifications() {
+  const { rows } = await query(
+    "SELECT COUNT(*)::int AS n FROM admin_notifications WHERE is_read = false"
+  );
+  return rows[0].n;
+}
+
+// Returns the updated notification, or null when the id doesn't exist. Marking an
+// already-read notification again is a no-op rather than an error.
+export async function markNotificationRead(id) {
+  const { rows } = await query(
+    "UPDATE admin_notifications SET is_read = true WHERE id = $1 RETURNING *",
+    [Number(id)]
+  );
+  return rows[0] ? mapNotification(rows[0]) : null;
+}
+
+// Returns how many rows actually changed.
+export async function markAllNotificationsRead() {
+  const { rowCount } = await query(
+    "UPDATE admin_notifications SET is_read = true WHERE is_read = false"
+  );
+  return rowCount;
 }
 
 

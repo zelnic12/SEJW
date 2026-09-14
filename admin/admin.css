@@ -791,3 +791,101 @@ button.admin-back {
   .od-totals { max-width: none; }
   .timeline-point { flex-direction: column; gap: .1rem; }
 }
+
+
+
+/* ---- Notification bell + dropdown ---- */
+/* The topbar is space-between with the title on the left, so the bell and the
+   refresh button share one group on the right. */
+.topbar-actions { display: flex; align-items: center; gap: .6rem; }
+
+/* Anchor for the absolutely-positioned panel. */
+.notif { position: relative; }
+
+.notif-bell {
+  position: relative; display: inline-grid; place-items: center;
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  background: none; border: 1px solid transparent; cursor: pointer;
+  font-size: 1.15rem; line-height: 1;
+  transition: background .15s ease, border-color .15s ease;
+}
+.notif-bell:hover { background: var(--surface-secondary); border-color: var(--border); }
+.notif-bell:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.notif-bell.has-unread .notif-bell-icon { filter: none; }
+
+/* Unread count, matching the sidebar badge's red pill. */
+.notif-count {
+  position: absolute; top: 1px; right: 1px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  display: inline-grid; place-items: center;
+  border-radius: 999px; background: var(--danger); color: #fff;
+  font-size: .64rem; font-weight: 700; line-height: 1;
+  border: 2px solid var(--surface);   /* separates it from the icon underneath */
+}
+
+/* One shake when something new arrives, so it's noticeable peripherally. */
+@keyframes notif-ring {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(9deg); }
+  60% { transform: rotate(-7deg); }
+  75% { transform: rotate(4deg); }
+}
+.notif-bell.ring .notif-bell-icon {
+  display: inline-block;
+  animation: notif-ring .9s ease-in-out;
+  transform-origin: 50% 15%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notif-bell.ring .notif-bell-icon { animation: none; }
+}
+
+.notif-mute {
+  background: none; border: none; cursor: pointer; padding: .1rem .2rem;
+  font-size: .95rem; line-height: 1; border-radius: 5px;
+}
+.notif-mute:hover { background: var(--surface-secondary); }
+.notif-mute.muted { opacity: .55; }
+
+/* The panel sits above the sticky topbar (z-index 20) but below modals (90). */
+.notif-panel {
+  position: absolute; top: calc(100% + .5rem); right: 0; z-index: 40;
+  width: min(360px, calc(100vw - 2rem));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.notif-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--border);
+  font-size: .92rem;
+}
+.notif-panel-actions { display: flex; align-items: center; gap: .5rem; }
+.notif-panel-actions .link-btn { font-size: .78rem; }
+
+.notif-list { max-height: min(420px, 60vh); overflow-y: auto; }
+.notif-empty { padding: 1.6rem 1rem; text-align: center; color: var(--text-secondary); font-size: .84rem; line-height: 1.5; }
+
+/* Rows follow the conversation-list pattern: full-width borderless buttons. */
+.notif-item {
+  display: flex; gap: .7rem; width: 100%; text-align: left;
+  padding: .7rem 1rem; background: none; border: none;
+  border-bottom: 1px solid var(--border); cursor: pointer; font: inherit;
+  transition: background .12s ease;
+}
+.notif-item:last-child { border-bottom: none; }
+.notif-item:hover { background: var(--surface-secondary); }
+/* Unread rows get a tinted ground and a red rail down the left edge. */
+.notif-item.unread { background: var(--primary-light); box-shadow: inset 3px 0 0 var(--primary); }
+.notif-item.unread:hover { background: var(--primary-light); filter: brightness(.98); }
+.notif-item-icon { font-size: 1rem; line-height: 1.3; flex-shrink: 0; }
+.notif-item-text { display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
+.notif-item-title { font-size: .86rem; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.notif-item.unread .notif-item-title { font-weight: 700; }
+.notif-item-body { font-size: .8rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.notif-item-time { font-size: .72rem; color: var(--text-secondary); opacity: .85; }
+
+@media (max-width: 600px) {
+  .notif-panel { position: fixed; top: 62px; right: .75rem; left: .75rem; width: auto; }
+}

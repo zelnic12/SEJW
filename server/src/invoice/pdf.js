@@ -2,6 +2,7 @@
 // Programmatic PDF (no browser/canvas). A4, white background, Sinar Elektronik
 // red accents, clean typography, print-friendly.
 import PDFDocument from "pdfkit";
+import { formatMoney } from "../money.js";
 
 // Brand + layout constants.
 const RED = "#C8102E";
@@ -9,16 +10,6 @@ const DARK = "#1A1A1A";
 const MUTED = "#666666";
 const BORDER = "#E5E5E5";
 const PAGE_MARGIN = 48;
-
-function fmtMoney(currency, n) {
-  if (currency === "IDR") {
-    // Indonesian Rupiah: thousands dots, no decimal cents.
-    return "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
-  }
-  const value = Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const symbol = currency === "USD" ? "$" : "";
-  return symbol ? `${symbol}${value}` : `${value} ${currency}`;
-}
 
 function fmtDate(iso) {
   const d = new Date(iso);
@@ -34,7 +25,7 @@ function fmtDate(iso) {
  */
 export function streamInvoicePdf(order, store, res) {
   const currency = store.currency || "USD";
-  const money = n => fmtMoney(currency, n);
+  const money = n => formatMoney(currency, n);
   const doc = new PDFDocument({ size: "A4", margin: PAGE_MARGIN });
   doc.pipe(res);
 
