@@ -265,7 +265,7 @@ img { max-width: 100%; display: block; }
 .cart-total-row { margin-top: .5rem; padding-top: .7rem; border-top: 1px solid var(--border); font-size: 1.05rem; }
 .cart-total-row span { color: var(--text); }
 .cart-total-row strong { font-size: 1.35rem; color: var(--text); }
-.checkout-msg { color: var(--success); font-size: .9rem; margin-top: .8rem; text-align: center; }
+
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .cart-drawer { box-shadow: var(--shadow-lg); }
 
@@ -415,16 +415,14 @@ img { max-width: 100%; display: block; }
 .delivery-note span { font-size: .82rem; color: var(--text-secondary); line-height: 1.5; }
 
 .payment-mount { min-height: 40px; }
-.payment-demo {
-  display: flex; align-items: flex-start; gap: .8rem;
-  background: var(--surface-secondary); border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 1rem;
+/* Payment info note (shown when no gateway is mounted). Quieter than
+   .delivery-note above it — this is information, not a restriction. */
+.payment-note {
+  background: var(--surface-secondary); border: 1px solid var(--border);
+  border-left: 3px solid var(--border); border-radius: var(--radius-sm); padding: .9rem 1rem;
 }
-.payment-demo-badge {
-  background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary);
-  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  padding: .2rem .55rem; border-radius: 999px; flex-shrink: 0;
-}
-.payment-demo p { color: var(--text-secondary); font-size: .88rem; line-height: 1.5; }
+.payment-note p { color: var(--text-secondary); font-size: .88rem; line-height: 1.55; }
+.payment-note a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
 
 .form-error-banner {
   background: #fdecec; border: 1px solid #f7cccc;
@@ -469,7 +467,7 @@ img { max-width: 100%; display: block; }
 .confirm-row:last-child { border-bottom: none; }
 .confirm-row span { color: var(--muted); }
 .confirm-row strong { text-align: right; }
-.confirm-note { color: var(--muted); font-size: .84rem; margin-bottom: 1.4rem; }
+
 
 @media (max-width: 860px) {
   .checkout-grid { grid-template-columns: 1fr; }
