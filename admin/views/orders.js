@@ -5,7 +5,7 @@
 // always shows all five counts, so the board's "see everything at once" benefit
 // survives without five columns competing for width.
 import { api } from "../components/api.js";
-import { money, fmtDate, esc } from "../components/format.js";
+import { money, fmtDate, esc, thumb } from "../components/format.js";
 import { openModal } from "../components/modal.js";
 import { toast } from "../components/toast.js";
 
@@ -201,9 +201,17 @@ function detailBody(order) {
   const isPickup = methodOf(order) === "pickup";
   const a = order.amounts;
 
+  // Every line with its thumbnail, so the admin can see what was ordered without
+  // cross-referencing the catalog. A line whose product has been deleted keeps
+  // its snapshotted name and falls back to a generic glyph.
   const items = order.items.map(it => `
     <tr>
-      <td>${esc(it.name)}</td>
+      <td>
+        <div class="od-item">
+          ${thumb({ url: it.image, emoji: it.emoji, alt: it.name, cls: "row-thumb" })}
+          <span class="od-item-name">${esc(it.name)}</span>
+        </div>
+      </td>
       <td class="num">${it.qty}</td>
       <td class="num">${money(it.price)}</td>
       <td class="num">${money(it.price * it.qty)}</td>
@@ -377,8 +385,24 @@ async function openOrderDetail(root, orderId) {
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
+// What's in the order, at a glance: the first line's thumbnail and name, plus a
+// "+N more" for the rest. Showing every thumbnail would not fit a card, and the
+// full list is one click away in the detail view.
+function itemPreview(items) {
+  if (!items || items.length === 0) return "";
+  const [first, ...rest] = items;
+  // Hovering the counter names the other products, so the rest isn't a mystery.
+  const restNames = rest.map(i => i.name).join(", ");
+  return `
+    <div class="order-card-items">
+      ${thumb({ url: first.image, emoji: first.emoji, alt: first.name, cls: "oc-thumb" })}
+      <span class="oc-item-name" title="${esc(first.name)}">${esc(first.name)}</span>
+      ${first.qty > 1 ? `<span class="oc-item-qty">×${first.qty}</span>` : ""}
+      ${rest.length ? `<span class="oc-more" title="${esc(restNames)}">+${rest.length} more</span>` : ""}
+    </div>`;
+}
+
 function orderCard(o) {
-  const itemCount = o.items.reduce((s, i) => s + i.qty, 0);
   const status = normalizeStatus(o.status);
   const method = methodOf(o);
   const next = nextAction(status, method);
@@ -392,10 +416,9 @@ function orderCard(o) {
       <div class="order-card-customer">${esc(o.customer?.name || "—")}</div>
       <div class="order-card-meta">
         <span>${fmtDate(o.createdAt)}</span>
-        <span>·</span>
-        <span>${itemCount} item${itemCount === 1 ? "" : "s"}</span>
         ${o.customer?.district ? `<span>·</span><span>${esc(o.customer.district)}</span>` : ""}
       </div>
+      ${itemPreview(o.items)}
       <div class="order-card-tags">${methodPill}<span class="stage-pill">${esc(stageLabelFor(status, method))}</span></div>
       ${(next || canCancel(status)) ? `<div class="order-card-actions">
         ${next ? `<button class="btn btn-primary btn-xs" data-move="${esc(o.id)}" data-to="${next.to}">${next.label}</button>` : ""}
