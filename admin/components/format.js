@@ -39,6 +39,25 @@ export function thumb({ url = null, emoji = null, alt = "", cls = "row-thumb" } 
   return `<span class="${cls} ${cls}-emoji" role="img" aria-label="${esc(alt)}">${esc(glyph || "📦")}</span>`;
 }
 
+// Relative time for feeds: "just now", "5 minutes ago", "3 days ago".
+// Falls back to an absolute date once it's older than a week, since "23 days ago"
+// is less useful than the date itself.
+export function timeAgo(iso) {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const secs = Math.round((Date.now() - then) / 1000);
+  // Clamp negatives: a client clock slightly ahead of the server shouldn't
+  // produce "in 2 minutes" for something that just happened.
+  if (secs < 45) return "just now";
+
+  const plural = (n, unit) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (secs < 3600) return plural(Math.floor(secs / 60), "minute");
+  if (secs < 86400) return plural(Math.floor(secs / 3600), "hour");
+  if (secs < 604800) return plural(Math.floor(secs / 86400), "day");
+  // Past a week the exact date is more useful than "23 days ago".
+  return fmtDate(iso);
+}
+
 // Stock status → { label, className }
 export function stockStatus(stock) {
   if (stock <= 0) return { label: "Out", className: "out" };

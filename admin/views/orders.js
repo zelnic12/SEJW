@@ -109,9 +109,34 @@ const methodOf = order => (order.fulfillmentMethod === "pickup" ? "pickup" : "de
 // Module scope so a status change (which re-renders) keeps the admin on the tab
 // they were working in, matching how the products view remembers its tab.
 let currentStatus = DEFAULT_STATUS;
+// Set by openOrderById() so a notification click can land on an order's detail
+// view: the list opens it once the cards have rendered.
+let pendingOrderId = null;
 
 function reload(root) {
   return renderOrders(root, { status: currentStatus });
+}
+
+/**
+ * Which route to visit to open a given order, and a request to open its detail
+ * view when that route renders. Used by the notification bell.
+ *
+ * The order's own status decides the tab, so a new order lands on Awaiting
+ * Payment or Needs Shipping depending on whether a gateway is configured. If the
+ * lookup fails we still return a usable route — the detail view re-fetches
+ * anyway, so the worst case is the list underneath showing a different tab.
+ *
+ * @returns {Promise<string>} the admin route (no leading "#")
+ */
+export async function openOrderById(id) {
+  pendingOrderId = id;
+  let status = DEFAULT_STATUS;
+  try {
+    status = normalizeStatus((await api.getOrder(id)).status);
+  } catch {
+    /* Fall back to the default tab; the detail view still opens. */
+  }
+  return ORDER_TABS.find(t => t.status === status)?.route || "orders";
 }
 
 // Open (or download) the invoice PDF as a blob so the admin auth header is sent.
@@ -529,6 +554,13 @@ export async function renderOrders(root, { status = DEFAULT_STATUS } = {}) {
       }
     });
   });
+
+  // Honour an order requested from outside (notification click).
+  if (pendingOrderId) {
+    const wanted = pendingOrderId;
+    pendingOrderId = null;
+    await openOrderDetail(root, wanted);
+  }
 }
 
 // Route table for admin.js — one entry per status tab, so each is linkable.

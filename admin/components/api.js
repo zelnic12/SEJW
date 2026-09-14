@@ -169,6 +169,15 @@ export const api = {
     return URL.createObjectURL(await res.blob());
   },
 
+  // Notifications (admin) — new orders + new customer chat messages
+  listNotifications: ({ unreadOnly = false, limit = 20 } = {}) => {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (unreadOnly) qs.set("unread", "true");
+    return request(`/admin/notifications?${qs}`);
+  },
+  markNotificationRead: id => request(`/admin/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () => request("/admin/notifications/read-all", { method: "POST" }),
+
   // Analytics
   overview: () => request("/analytics/overview"),
   summary: () => request("/analytics/summary"),

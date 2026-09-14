@@ -9,6 +9,17 @@ const POLL_MS = 4000;
 let activeId = null;      // currently open conversation
 let pollTimer = null;
 let lastMsgId = 0;        // highest message id rendered in the open thread
+// Set by openConversationById() so a notification click can land straight on a
+// thread: the view opens it once the conversation list has rendered.
+let pendingId = null;
+
+/**
+ * Ask the Messages view to open a specific conversation the next time it renders.
+ * Used by the notification bell, which navigates to #messages right after.
+ */
+export function openConversationById(id) {
+  pendingId = Number(id) || null;
+}
 
 function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
@@ -141,6 +152,14 @@ export async function renderMessages_view(root) {
     </div>`;
 
   await refreshList(root);
+
+  // Honour a conversation requested from outside (notification click).
+  if (pendingId) {
+    const wanted = pendingId;
+    pendingId = null;
+    // Only if it's still in the list — it may have been deleted since.
+    if (root.querySelector(`[data-conv="${wanted}"]`)) await openConversation(root, wanted);
+  }
 
   // Poll: refresh the list, and the open thread if any.
   stopPolling();

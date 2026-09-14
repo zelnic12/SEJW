@@ -3,9 +3,9 @@
 // so views are refresh-safe and linkable (#products, #orders, #sales).
 import { renderOverview } from "./views/overview.js";
 import { renderProducts } from "./views/products.js";
-import { renderOrders, ORDER_ROUTES } from "./views/orders.js";
+import { renderOrders, ORDER_ROUTES, openOrderById } from "./views/orders.js";
 import { renderSales } from "./views/sales.js";
-import { renderMessages_view } from "./views/messages.js";
+import { renderMessages_view, openConversationById } from "./views/messages.js";
 import { renderPromos } from "./views/promos.js";
 import { renderBanners } from "./views/banners.js";
 import { renderAftersales } from "./views/aftersales.js";
@@ -15,6 +15,7 @@ import { renderShippingZones } from "./views/shipping-zones.js";
 import { renderLogin } from "./views/login.js";
 import { auth, api, setUnauthorizedHandler } from "./components/api.js";
 import { toast } from "./components/toast.js";
+import { startNotifications, stopNotifications } from "./components/notifications.js";
 
 const VIEWS = {
   overview: { title: "Overview", render: renderOverview },
@@ -65,6 +66,29 @@ async function show(view) {
   await cfg.render(root);
 }
 
+// Navigate to a view. Setting the hash normally does it (via hashchange), but
+// when we're already on that hash no event fires — so re-render explicitly.
+// Needed because notification clicks ask a view to open something on next render.
+function goTo(view) {
+  if (location.hash === `#${view}`) show(view);
+  else location.hash = `#${view}`;
+}
+
+// A notification was clicked: open what it refers to.
+async function goToNotification(n) {
+  try {
+    if (n.type === "new_order") {
+      // The order's status decides which tab holds it.
+      goTo(await openOrderById(n.referenceId));
+    } else if (n.type === "new_message") {
+      openConversationById(n.referenceId);
+      goTo("messages");
+    }
+  } catch (err) {
+    toast(err.message || "Could not open that notification", "error");
+  }
+}
+
 const layout = document.querySelector(".admin-layout");
 const loginHost = document.getElementById("loginHost");
 
@@ -92,6 +116,7 @@ window.addEventListener("hashchange", () => {
 
 // ---- Auth gating ----
 function showLogin() {
+  stopNotifications();
   layout.hidden = true;
   loginHost.hidden = false;
   renderLogin(loginHost, enterDashboard);
@@ -103,6 +128,7 @@ function enterDashboard() {
   layout.hidden = false;
   show(location.hash.replace("#", "") || "overview");
   refreshOutOfStockBadge();
+  startNotifications({ onNavigate: goToNotification });
 }
 
 // ---- Out-of-stock badge in the sidebar ----
