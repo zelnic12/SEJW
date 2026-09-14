@@ -76,15 +76,18 @@ async function loadShippingZones() {
  *   pay(order)       -> Promise<{ success, transactionId?, error? }>
  * ========================================================================= */
 
-// Default demo provider: no real charge, just simulates a successful payment.
+// Fallback provider used when no payment gateway is configured: the order is
+// placed and payment is settled out of band. The customer-facing copy points at
+// the terms rather than naming methods, since which ones are live depends on
+// configuration.
 const MockPaymentProvider = {
   id: "mock",
   mount(el /*, ctx */) {
     el.innerHTML = `
-      <div class="payment-demo">
-        <span class="payment-demo-badge">Demo</span>
-        <p>No real payment gateway is connected yet. Placing the order will
-           simulate a successful payment. A gateway can be integrated here later.</p>
+      <div class="payment-note">
+        <p>Pembayaran dikonfirmasi setelah pesanan Anda dibuat. Metode pembayaran
+           yang tersedia dijelaskan pada
+           <a href="terms.html">syarat &amp; ketentuan</a>.</p>
       </div>`;
   },
   validate() {
@@ -327,8 +330,8 @@ async function handleSubmit(e) {
     localStorage.setItem("voltedge_last_order", JSON.stringify(body));
 
     // If Midtrans returned a Snap token, open the QRIS payment popup. Otherwise
-    // (gateway not configured) fall back to showing confirmation directly so
-    // demos still work end-to-end.
+    // (gateway not configured) the order is placed and payment is settled out of
+    // band, so go straight to the confirmation screen.
     if (body.snapToken) {
       await payWithSnap(body, restoreButton);
     } else {
