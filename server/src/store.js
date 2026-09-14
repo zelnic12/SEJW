@@ -224,6 +224,8 @@ function mapOrder(orderRow, itemRows, historyRows = null) {
       // else the product's emoji, else a generic glyph (deleted product).
       image: it.image_url ?? null,
       emoji: it.product_emoji ?? null,
+      // Optional customer request for this line (colour, size, …). null = none.
+      note: it.note ?? null,
     })),
     amounts: {
       subtotal: Number(orderRow.subtotal),
@@ -362,9 +364,10 @@ export async function createOrder(order) {
     // Insert line items (snapshotting regular + charged price) and decrement stock.
     for (const item of order.items) {
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, regular_price, quantity)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [order.id, item.id, item.name, item.price, item.regularPrice ?? item.price, item.qty]
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, regular_price, quantity, note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [order.id, item.id, item.name, item.price, item.regularPrice ?? item.price, item.qty,
+         item.note ?? null]
       );
       await client.query(
         "UPDATE products SET stock = GREATEST(0, stock - $1) WHERE id = $2",

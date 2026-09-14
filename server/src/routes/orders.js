@@ -12,6 +12,18 @@ const router = Router();
 // server-side; client-supplied amounts are never trusted. No tax is charged.
 const round2 = n => Math.round(n * 100) / 100;
 
+// Optional free-text request the customer attaches to a line item ("warna hitam",
+// "ukuran L"). Trimmed and hard-capped rather than rejected: a note is never
+// worth failing an order over, and the cap is enforced here because the client
+// maxlength is only a hint.
+const ITEM_NOTE_MAX = 200;
+function sanitizeItemNote(raw) {
+  if (typeof raw !== "string") return null;
+  // Collapse newlines/tabs so a pasted blob can't stretch the admin layout.
+  const note = raw.replace(/\s+/g, " ").trim().slice(0, ITEM_NOTE_MAX);
+  return note.length ? note : null;
+}
+
 // Raise the "new order" bell notification. The text is composed here (rather
 // than at render time) so it stays accurate even if the order is later edited or
 // deleted. store.notifyQuietly swallows its own failures; the currency read is
@@ -135,6 +147,7 @@ router.post("/", async (req, res, next) => {
         price: chargedPrice,       // what the customer pays (sale price if on promo)
         regularPrice,              // list price snapshot (for invoice discount line)
         qty,
+        note: sanitizeItemNote(item.note),
       });
     }
 

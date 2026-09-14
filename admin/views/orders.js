@@ -234,7 +234,10 @@ function detailBody(order) {
       <td>
         <div class="od-item">
           ${thumb({ url: it.image, emoji: it.emoji, alt: it.name, cls: "row-thumb" })}
-          <span class="od-item-name">${esc(it.name)}</span>
+          <span class="od-item-text">
+            <span class="od-item-name">${esc(it.name)}</span>
+            ${it.note ? `<span class="od-item-note"><strong>Catatan:</strong> ${esc(it.note)}</span>` : ""}
+          </span>
         </div>
       </td>
       <td class="num">${it.qty}</td>

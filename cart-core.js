@@ -4,6 +4,11 @@
 
 (function (global) {
   const STORAGE_KEY = "voltedge_cart";
+  // Per-item notes live beside the cart, not inside it — see loadNotes() below.
+  const NOTES_KEY = "voltedge_cart_notes";
+  // Matches the server-side cap in routes/orders.js; the input's maxlength is
+  // only a hint, so both ends enforce it.
+  const NOTE_MAX = 200;
 
   // Pricing config — keep checkout and storefront math in sync.
   // Shipping is priced per Jabodetabek kecamatan (see /api/shipping-zones) and
@@ -142,13 +147,44 @@
   }
   function clearCart() {
     localStorage.removeItem(STORAGE_KEY);
+    clearNotes();
   }
 
-  // Resolve the raw cart map into product line items.
+  // ---- Per-item notes ----
+  // Optional free-text request per product ("warna hitam", "ukuran L"). Kept in
+  // its own { productId: note } map rather than folded into the cart, so the
+  // existing { productId: qty } shape — and any cart already in a customer's
+  // browser — keeps working untouched.
+  function loadNotes() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(NOTES_KEY) || "{}");
+      return raw && typeof raw === "object" ? raw : {};
+    } catch { return {}; }
+  }
+  function getNote(id) {
+    const note = loadNotes()[String(id)];
+    return typeof note === "string" ? note : "";
+  }
+  function saveNote(id, text) {
+    const notes = loadNotes();
+    const clean = String(text ?? "").slice(0, NOTE_MAX);
+    if (clean.trim()) notes[String(id)] = clean;
+    else delete notes[String(id)];          // blank note = no note stored
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+  }
+  function clearNote(id) { saveNote(id, ""); }
+  function clearNotes() { localStorage.removeItem(NOTES_KEY); }
+
+  // Resolve the raw cart map into product line items, each with its note.
   function cartEntries(cart) {
     cart = cart || loadCart();
+    const notes = loadNotes();
     return Object.entries(cart)
-      .map(([id, qty]) => ({ product: getProduct(id), qty }))
+      .map(([id, qty]) => ({
+        product: getProduct(id),
+        qty,
+        note: typeof notes[String(id)] === "string" ? notes[String(id)] : "",
+      }))
       .filter(e => e.product);
   }
 
@@ -185,9 +221,10 @@
   }
 
   global.VoltEdge = {
-    STORAGE_KEY, CONFIG,
+    STORAGE_KEY, NOTES_KEY, NOTE_MAX, CONFIG,
     get PRODUCTS() { return PRODUCTS; },
     money, esc, getProduct, loadProducts, priceOf,
     loadCart, saveCart, clearCart, cartEntries, computeTotals,
+    loadNotes, getNote, saveNote, clearNote, clearNotes,
   };
 })(window);

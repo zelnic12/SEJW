@@ -183,6 +183,12 @@
         <div class="confirm-row"><span>Fulfillment</span><strong id="confirmMethod">—</strong></div>
         <div class="confirm-row" id="confirmAddressRow"><span id="confirmAddressLabel">Shipping to</span><strong id="confirmAddress">—</strong></div>
       </div>
+
+      <!-- What was ordered, including any per-item notes the customer added. -->
+      <div class="confirm-items-block">
+        <h2 class="confirm-items-title">Your items</h2>
+        <div id="confirmItems" class="confirm-items"></div>
+      </div>
       <div class="pickup-note" id="confirmPickupNote" hidden>
         <strong>Pickup location</strong>
         <span>Sinar Elektronik — collect your order at our store during opening hours. We'll email you when it's ready.</span>
@@ -213,6 +219,9 @@
     <p class="footer-copy">© 2026 Sinar Elektronik.</p>
   </footer>
 
+  <!-- product-card.js supplies the shared image helpers, so the order summary
+       resolves product photos the same way the catalog cards do. -->
+  <script src="product-card.js"></script>
   <script src="cart-core.js"></script>
   <script src="checkout.js"></script>
 </body>

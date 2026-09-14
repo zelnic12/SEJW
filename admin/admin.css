@@ -688,7 +688,17 @@ button.admin-back {
 .od-section { margin-top: 1.4rem; }
 /* Line item cell: thumbnail beside the snapshotted product name. */
 .od-item { display: flex; align-items: center; gap: .6rem; min-width: 0; }
+.od-item-text { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
 .od-item-name { font-weight: 500; color: var(--text-primary); overflow-wrap: anywhere; }
+/* The customer's request for this line. Amber and boxed so whoever is packing
+   can't miss it while scanning the item list. */
+.od-item-note {
+  display: inline-block; font-size: .8rem; line-height: 1.45;
+  background: #fff7e6; color: #7a4e00; border: 1px solid #f5d99b;
+  border-radius: var(--radius-sm); padding: .25rem .45rem;
+  overflow-wrap: anywhere; white-space: normal;
+}
+.od-item-note strong { color: #6b4400; font-weight: 700; }
 .od-block h4, .od-section h4 {
   font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
   color: var(--text-secondary); margin-bottom: .5rem;

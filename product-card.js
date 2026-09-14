@@ -32,9 +32,19 @@
     return `<span class="media-emoji ${cls}">${glyph || emoji}</span>`;
   }
 
-  // The first image (lowest position) is primary; falls back to the emoji.
+  // The image to show for a product: the first REAL upload in position order,
+  // falling back to the emoji glyph only when the product has no real photo.
+  //
+  // Preferring a real upload matters because the seed writes an "emoji:<char>"
+  // placeholder at position 0, while an admin upload lands at maxpos + 1 — so
+  // taking images[0] blindly would keep showing the glyph for products that do
+  // have a photo. This matches how the server resolves order-item thumbnails and
+  // how the admin product table picks its preview.
   function primaryImage(p) {
-    return (p.images && p.images.length) ? p.images[0].url : `emoji:${p.emoji}`;
+    const images = Array.isArray(p.images) ? p.images : [];
+    const real = images.find(im => typeof im.url === "string" && im.url && !im.url.startsWith("emoji:"));
+    if (real) return real.url;
+    return images.length ? images[0].url : `emoji:${p.emoji}`;
   }
 
   // Sold out — stock is authoritative and comes straight from the API.
