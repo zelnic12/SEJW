@@ -171,6 +171,28 @@ async function getStatusHistory(clientOrNull, id) {
   }));
 }
 
+// Line items plus the thumbnail for each one, so order views can show what was
+// ordered without a second round-trip to the catalog.
+//
+// The image comes from the same product_images rows the storefront cards use,
+// with the same "lowest position wins" rule as PRODUCT_SELECT. Two deliberate
+// details:
+//   - `emoji:` rows are skipped: those are seed placeholders, not real images,
+//     so image_url stays NULL and the client falls back to a glyph.
+//   - the join is LEFT and product_id is nullable (ON DELETE SET NULL), so a
+//     line whose product was deleted still returns — just without an image.
+const ORDER_ITEMS_SELECT = `
+  SELECT oi.*,
+         p.emoji AS product_emoji,
+         (SELECT pi.url
+            FROM product_images pi
+           WHERE pi.product_id = oi.product_id
+             AND pi.url NOT LIKE 'emoji:%'
+           ORDER BY pi.position, pi.id
+           LIMIT 1) AS image_url
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id`;
+
 // Convert order + item rows into the API order shape.
 // `historyRows` is null when the caller didn't load the timeline (the orders
 // list skips it — one query per order would be wasteful for a screen that only
@@ -193,11 +215,15 @@ function mapOrder(orderRow, itemRows, historyRows = null) {
     // Which shipping zone priced this delivery, when one applied.
     shippingZoneId: orderRow.shipping_zone_id ?? null,
     items: itemRows.map(it => ({
-      id: it.product_id,
+      id: it.product_id,                                             // null once the product is deleted
       name: it.product_name,
       price: Number(it.unit_price),                                  // charged (sale) price
       regularPrice: it.regular_price == null ? Number(it.unit_price) : Number(it.regular_price),
       qty: it.quantity,
+      // Thumbnail source, in the client's fallback order: a real uploaded image,
+      // else the product's emoji, else a generic glyph (deleted product).
+      image: it.image_url ?? null,
+      emoji: it.product_emoji ?? null,
     })),
     amounts: {
       subtotal: Number(orderRow.subtotal),
@@ -264,7 +290,7 @@ export async function getOrders() {
   if (orders.length === 0) return [];
   const ids = orders.map(o => o.id);
   const { rows: items } = await query(
-    "SELECT * FROM order_items WHERE order_id = ANY($1) ORDER BY id", [ids]
+    `${ORDER_ITEMS_SELECT} WHERE oi.order_id = ANY($1) ORDER BY oi.id`, [ids]
   );
   const byOrder = new Map(orders.map(o => [o.id, []]));
   for (const it of items) byOrder.get(it.order_id)?.push(it);
@@ -276,7 +302,7 @@ export async function getOrder(id) {
   const { rows: orders } = await query("SELECT * FROM orders WHERE id = $1", [id]);
   if (orders.length === 0) return null;
   const { rows: items } = await query(
-    "SELECT * FROM order_items WHERE order_id = $1 ORDER BY id", [id]
+    `${ORDER_ITEMS_SELECT} WHERE oi.order_id = $1 ORDER BY oi.id`, [id]
   );
   return mapOrder(orders[0], items, await getStatusHistory(null, id));
 }
@@ -358,7 +384,7 @@ async function getOrderWithClient(client, id) {
   const { rows: orders } = await client.query("SELECT * FROM orders WHERE id = $1", [id]);
   if (orders.length === 0) return null;
   const { rows: items } = await client.query(
-    "SELECT * FROM order_items WHERE order_id = $1 ORDER BY id", [id]
+    `${ORDER_ITEMS_SELECT} WHERE oi.order_id = $1 ORDER BY oi.id`, [id]
   );
   return mapOrder(orders[0], items, await getStatusHistory(client, id));
 }

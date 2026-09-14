@@ -1,6 +1,6 @@
 // Products view: full CRUD + stock management.
 import { api } from "../components/api.js";
-import { money, esc, stockStatus } from "../components/format.js";
+import { money, esc, stockStatus, thumb } from "../components/format.js";
 import { dataTable } from "../components/dataTable.js";
 import { openModal, confirmDialog } from "../components/modal.js";
 import { toast } from "../components/toast.js";
@@ -173,11 +173,7 @@ function primaryImageUrl(p) {
 
 // Small row/preview thumbnail for a product (real image or emoji fallback).
 function productThumb(p, cls = "row-thumb") {
-  const url = primaryImageUrl(p);
-  if (url.startsWith("emoji:")) {
-    return `<span class="${cls} ${cls}-emoji">${esc(url.slice(6))}</span>`;
-  }
-  return `<span class="${cls}"><img src="${esc(url)}" alt="${esc(p.name || "")}" loading="lazy" /></span>`;
+  return thumb({ url: primaryImageUrl(p), emoji: p.emoji, alt: p.name || "", cls });
 }
 
 // Image manager: upload, preview, set-main, delete. Reorder via set-main
