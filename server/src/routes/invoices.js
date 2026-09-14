@@ -53,7 +53,9 @@ async function buildInvoice(order) {
       id: order.id,
       createdAt: order.createdAt,
       status: order.status,
-      paymentStatus: "paid",
+      // The order's real payment state — never a hardcoded "paid". An invoice
+      // for an unpaid order must not claim it was settled.
+      paymentStatus: order.paymentStatus || "pending",
     },
     store: settings,
     customer: order.customer,

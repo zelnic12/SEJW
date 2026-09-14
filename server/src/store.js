@@ -258,6 +258,47 @@ export async function setOrderPayment(id, { token = null, redirectUrl = null, st
   return getOrder(id);
 }
 
+// Payment setup failed (the gateway never issued a usable token), so this order
+// can never be paid: there is nothing for the customer to pay against. Put it in
+// an unambiguously failed state and give the reserved stock back.
+//
+// Cancelling rather than leaving it in awaiting_payment matters twice over: the
+// admin queues stay truthful (it shows under Cancelled, not "waiting for the
+// customer"), and without releasing stock every failed attempt would quietly eat
+// inventory for an order that can never complete.
+export async function failOrderPayment(id) {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      "SELECT status FROM orders WHERE id = $1 FOR UPDATE", [id]
+    );
+    if (rows.length === 0) return null;
+
+    // Put the reserved stock back. product_id is null once a product is deleted,
+    // in which case there's nothing to credit.
+    const { rows: items } = await client.query(
+      "SELECT product_id, quantity FROM order_items WHERE order_id = $1", [id]
+    );
+    for (const it of items) {
+      if (it.product_id == null) continue;
+      await client.query(
+        "UPDATE products SET stock = stock + $1 WHERE id = $2",
+        [it.quantity, it.product_id]
+      );
+    }
+
+    await client.query(
+      `UPDATE orders
+          SET payment_status = 'failed', status = 'cancelled',
+              payment_token = NULL, payment_redirect_url = NULL
+        WHERE id = $1`,
+      [id]
+    );
+    if (rows[0].status !== "cancelled") await recordStatusChange(client, id, "cancelled");
+
+    return getOrderWithClient(client, id);
+  });
+}
+
 // Apply a (verified) Midtrans notification: update payment_status, the
 // transaction id, and — when the payment settles or fails — the fulfilment
 // status. Only updates fulfilment when `orderStatus` is provided.

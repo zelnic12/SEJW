@@ -249,42 +249,59 @@ router.post("/", async (req, res, next) => {
       throw e;
     }
 
-    // Tell the admin dashboard about it. Outside createOrder's transaction and
-    // non-throwing by design: a notification is never worth rolling back a paid
-    // order, reserved stock and a redeemed promo code.
-    await notifyNewOrder(saved);
-
     // Create the Midtrans Snap transaction AFTER the order is persisted, using
     // the order's own id as order_id and the SERVER-computed total as
     // gross_amount. The frontend uses the returned token to open the QRIS popup.
     //
-    // Gateway errors are non-fatal: the order is already valid (stock reserved,
-    // totals fixed). We record the payment state and let the client retry
-    // payment rather than losing the order.
+    // A gateway failure here IS fatal to the request. Without a Snap token there
+    // is nothing for the customer to pay against, so responding 201 would tell
+    // the client the order succeeded and leave it to present an unpaid order as
+    // confirmed. Instead: put the order into a clearly failed state, give the
+    // stock back, and return an error so payment can be retried from scratch.
     let snap = null;
     if (isPaymentEnabled()) {
       try {
         snap = await createSnapTransaction(saved);
-        saved = await store.setOrderPayment(saved.id, {
-          token: snap?.token ?? null,
-          redirectUrl: snap?.redirectUrl ?? null,
-          status: "pending",
-        });
       } catch (payErr) {
         console.error(`Midtrans Snap creation failed for order ${saved.id}:`, payErr?.message || payErr);
-        // Leave the order in place; surface a soft warning to the client.
-        saved.paymentError = "Payment could not be initialised. You can retry payment.";
       }
+
+      if (!snap?.token) {
+        const failed = await store.failOrderPayment(saved.id);
+        console.error(`Order ${saved.id} cancelled: payment could not be initialised.`);
+        return res.status(502).json({
+          error: "Gagal memproses pembayaran, coba lagi atau hubungi kami.",
+          paymentFailed: true,
+          orderId: saved.id,
+          status: failed?.status ?? "cancelled",
+          paymentStatus: failed?.paymentStatus ?? "failed",
+        });
+      }
+
+      saved = await store.setOrderPayment(saved.id, {
+        token: snap.token,
+        redirectUrl: snap.redirectUrl ?? null,
+        status: "pending",
+      });
     } else {
       // No gateway configured — mark the payment state so it's explicit.
       saved = await store.setOrderPayment(saved.id, { status: "unconfigured" });
     }
+
+    // Only tell the admin dashboard once the order is actually placeable. An
+    // order that died at payment setup isn't news, and notifying is never worth
+    // failing the request over (store.notifyQuietly swallows its own errors).
+    await notifyNewOrder(saved);
 
     res.status(201).json({
       ...saved,
       // Payment info for the frontend Snap popup.
       snapToken: snap?.token ?? null,
       redirectUrl: snap?.redirectUrl ?? null,
+      // Explicit so the client never has to infer "is a payment step required?"
+      // from the absence of a token — which is what made a failed setup look
+      // like a store with no gateway configured.
+      paymentRequired: isPaymentEnabled(),
       midtransClientKey: getClientConfig().clientKey || null,
       midtransProduction: getClientConfig().isProduction,
     });

@@ -74,7 +74,10 @@ export function streamInvoicePdf(order, store, res) {
   labelVal(left, y, "Invoice number", order.invoiceNo || "—"); y += 26;
   labelVal(left, y, "Order number", order.id); y += 26;
   labelVal(left, y, "Order date", fmtDate(order.createdAt)); y += 26;
-  labelVal(left, y, "Status", `${(order.status || "").toUpperCase()} · PAID`);
+  // Show the order's real payment state. This used to append a hardcoded
+  // "· PAID", which stamped an unpaid order's invoice as settled.
+  const payLabel = String(order.paymentStatus || "pending").toUpperCase();
+  labelVal(left, y, "Status", `${(order.status || "").toUpperCase()} · ${payLabel}`);
 
   // Bill-to (right column).
   let ry = startY;

@@ -15,7 +15,8 @@
     "seed:orders": "node src/db/seed-orders.js",
     "seed:admin": "node src/db/seed-admin.js",
     "db:setup": "node src/db/migrate.js && node src/db/seed.js && node src/db/seed-admin.js",
-    "db:demo": "node src/db/migrate.js && node src/db/seed.js && node src/db/seed-orders.js && node src/db/seed-admin.js"
+    "db:demo": "node src/db/migrate.js && node src/db/seed.js && node src/db/seed-orders.js && node src/db/seed-admin.js",
+    "test:payment-failure": "node tests/payment-failure.test.mjs"
   },
   "engines": {
     "node": ">=18"
