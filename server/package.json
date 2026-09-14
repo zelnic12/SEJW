@@ -5,8 +5,10 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
+    "build:frontend": "node scripts/copy-frontend.js",
+    "prestart": "npm run build:frontend",
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "dev": "npm run build:frontend && node --watch src/index.js",
     "migrate": "node src/db/migrate.js",
     "migrate:images": "node src/db/migrate-images-to-cloudinary.js",
     "seed": "node src/db/seed.js",

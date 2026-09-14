@@ -27,8 +27,11 @@ import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
-// The static frontend lives one level up from server/.
-const FRONTEND_DIR = path.join(__dirname, "..", "..");
+// The static frontend is copied into server/public/ before start (see
+// scripts/copy-frontend.js, run by the "prestart" npm script). Serving from
+// inside server/ means it's present regardless of which directory the host
+// treats as the deploy root — Railway sets that to server/.
+const FRONTEND_DIR = path.join(__dirname, "..", "public");
 // LEGACY ONLY: images uploaded before the move to Cloudinary. New uploads go
 // straight to Cloudinary's CDN and never touch this folder — see src/cloudinary.js.
 const LEGACY_UPLOADS_DIR = path.join(__dirname, "..", "uploads");
