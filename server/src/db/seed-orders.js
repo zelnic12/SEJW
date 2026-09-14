@@ -9,6 +9,7 @@
 import 'dotenv/config';
 import { pathToFileURL } from "node:url";
 import { pool, withTransaction } from "./pool.js";
+import { refuseInProduction } from "./demo-guard.js";
 
 const round2 = n => Math.round(n * 100) / 100;
 
@@ -172,6 +173,8 @@ export async function seedOrders(count = 120) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // This clears existing orders and customers — never against a production database.
+  refuseInProduction("the demo order seed");
   const count = Number(process.argv[2]) || 120;
   seedOrders(count)
     .then(() => pool.end())

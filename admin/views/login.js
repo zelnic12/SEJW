@@ -20,7 +20,6 @@ export function renderLogin(host, onSuccess) {
         </div>
         <p class="form-error" id="lgErr" hidden></p>
         <button class="btn btn-primary btn-block" id="lgBtn" type="submit">Sign in</button>
-        <p class="login-hint">Demo credentials: <code>admin</code> / <code>admin123</code></p>
       </form>
     </div>`;
 

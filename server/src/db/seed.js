@@ -6,6 +6,7 @@ import 'dotenv/config';
 import { pathToFileURL } from "node:url";
 import { pool, withTransaction } from "./pool.js";
 import { SEED_PRODUCTS } from "../data/seed-products.js";
+import { refuseInProduction } from "./demo-guard.js";
 
 export async function seed() {
   await withTransaction(async (client) => {
@@ -82,6 +83,8 @@ export async function seed() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // This truncates the product catalog — never against a production database.
+  refuseInProduction("the demo product seed");
   seed()
     .then(() => pool.end())
     .then(() => process.exit(0))
