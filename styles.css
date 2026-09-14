@@ -1178,3 +1178,85 @@ img { max-width: 100%; display: block; }
   .as-tab { flex: 1; text-align: center; padding: .7rem .5rem; }
   .as-order-label { min-width: 78px; }
 }
+
+
+
+/* ============================================================================
+ * Static policy pages (terms.html, privacy.html, returns.html)
+ * Long-form reading layout. The typography rules are scoped to `.static-body`
+ * so plain HTML — headings, paragraphs, lists, tables — can be pasted in and
+ * comes out styled without any further layout work.
+ * ========================================================================== */
+/* Composed with .container, so the width is min(1180px, 92%) capped at 780px —
+   a comfortable measure for prose, narrower than the 820px product pages. */
+.static-page { padding: 1.4rem 0 4rem; max-width: 780px; }
+
+.static-head { margin: 1rem 0 1.5rem; }
+.static-head h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; letter-spacing: -.02em; }
+.static-meta { color: var(--muted); font-size: .85rem; margin-top: .6rem; }
+
+/* ---- Long-form body copy ---- */
+.static-body { color: var(--text); }
+.static-body > * + * { margin-top: 1rem; }
+
+.static-body h2 {
+  font-size: 1.2rem; font-weight: 800; letter-spacing: -.01em;
+  margin-top: 2.2rem; padding-top: 1.2rem; border-top: 1px solid var(--border);
+}
+.static-body h2:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.static-body h3 { font-size: 1.02rem; font-weight: 700; margin-top: 1.5rem; }
+
+.static-body p,
+.static-body li { line-height: 1.75; }
+.static-body p { max-width: 68ch; }
+
+.static-body ul,
+.static-body ol { padding-left: 1.35rem; max-width: 68ch; }
+.static-body li + li { margin-top: .4rem; }
+.static-body ul { list-style: disc; }
+.static-body ol { list-style: decimal; }
+.static-body li::marker { color: var(--primary); }
+
+.static-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.static-body a:hover { color: var(--primary-dark); }
+.static-body strong { font-weight: 700; color: var(--text-primary); }
+
+.static-body dl { max-width: 68ch; }
+.static-body dt { font-weight: 700; margin-top: 1rem; }
+.static-body dd { margin-left: 0; line-height: 1.75; color: var(--text-secondary); }
+
+.static-body blockquote {
+  border-left: 3px solid var(--primary); background: var(--surface-secondary);
+  padding: .9rem 1.1rem; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--text-secondary);
+}
+
+/* Tables (e.g. a returns-window matrix) stay readable on small screens. */
+.static-body table { width: 100%; border-collapse: collapse; font-size: .92rem; display: block; overflow-x: auto; }
+.static-body th,
+.static-body td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--border); }
+.static-body th { font-weight: 700; background: var(--surface-secondary); white-space: nowrap; }
+
+/* Placeholder callout — remove once the real policy text is in place. */
+.static-note {
+  border: 1px dashed var(--border); border-radius: var(--radius);
+  background: var(--surface-secondary); padding: 1.1rem 1.2rem;
+  color: var(--text-secondary); font-size: .92rem; line-height: 1.65;
+}
+.static-note strong { color: var(--text-primary); }
+
+/* Cross-links between the policy pages, shown under the content. */
+.static-related { margin-top: 2.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
+.static-related h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.static-related-links { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .7rem; }
+.static-related-links a { color: var(--primary); font-size: .9rem; font-weight: 600; }
+.static-related-links a:hover { text-decoration: underline; }
+
+/* Compact policy link row for the reduced checkout footer. */
+.footer-legal { display: flex; justify-content: center; gap: 1.25rem; flex-wrap: wrap; }
+.footer-legal a { color: var(--muted); font-size: .85rem; }
+.footer-legal a:hover { color: var(--primary); }
+
+@media (max-width: 640px) {
+  .static-body h2 { margin-top: 1.8rem; }
+}

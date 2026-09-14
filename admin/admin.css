@@ -204,8 +204,6 @@ button.admin-back {
 .login-brand .brand-name span { color: var(--primary); }
 .login-card h1 { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); }
 .login-sub { color: var(--text-secondary); font-size: .9rem; margin-top: -.5rem; }
-.login-hint { color: var(--text-secondary); font-size: .8rem; text-align: center; }
-.login-hint code { background: var(--surface-secondary); padding: .1rem .35rem; border-radius: 5px; color: var(--text-primary); border: 1px solid var(--border); }
 
 
 /* ---- Promo pricing (admin) ---- */

@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Category — Sinar Elektronik</title>
-  <meta name="description" content="Jelajahi produk Sinar Elektronik berdasarkan kategori." />
+  <title>Terms &amp; Conditions — Sinar Elektronik</title>
+  <meta name="description" content="Syarat dan ketentuan penggunaan layanan serta pembelian di Sinar Elektronik." />
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 </head>
-<body data-listing="category">
-  <!-- Header (same structure as the homepage) -->
+<body>
+  <!-- Header (same structure as the rest of the storefront, minus the product
+       search — there's nothing to search on this page) -->
   <header class="site-header">
     <div class="container header-inner">
       <a href="index.html" class="brand" aria-label="Sinar Elektronik home">
@@ -37,11 +38,6 @@
         </div>
       </div>
 
-      <div class="search-wrap">
-        <input type="search" id="searchInput" class="search-input" placeholder="Search in this category…" aria-label="Search products" />
-        <span class="search-icon" aria-hidden="true">🔍</span>
-      </div>
-
       <nav class="header-actions" aria-label="Account and cart">
         <a href="admin.html" class="header-link" title="Store admin dashboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
@@ -63,41 +59,55 @@
     </div>
   </header>
 
-  <main class="container listing-page">
+  <main class="container static-page">
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <a href="index.html">Home</a>
       <span aria-hidden="true">/</span>
-      <a href="index.html#catalog">All products</a>
-      <span aria-hidden="true">/</span>
-      <span id="crumbCurrent" class="breadcrumb-current">Category</span>
+      <span class="breadcrumb-current">Terms &amp; conditions</span>
     </nav>
 
-    <div class="listing-head">
-      <span class="listing-icon" id="listingIcon" aria-hidden="true"></span>
-      <div>
-        <h1 id="listingTitle">Category</h1>
-        <p class="listing-count" id="listingCount"></p>
-      </div>
-      <a class="btn btn-secondary btn-sm listing-back" href="index.html#catalog">← Back to full catalog</a>
+    <div class="static-head">
+      <h1>Terms &amp; Conditions</h1>
+      <!-- Replace the em dash with the date the policy takes effect. -->
+      <p class="static-meta">Terakhir diperbarui: —</p>
     </div>
 
-    <div class="catalog-head listing-controls">
-      <div class="catalog-controls">
-        <div class="filters" id="secondaryFilters" role="tablist" aria-label="Filter by brand"></div>
-        <select id="sortSelect" class="sort-select" aria-label="Sort products">
-          <option value="featured">Featured</option>
-          <option value="price-asc">Price: Low to High</option>
-          <option value="price-desc">Price: High to Low</option>
-          <option value="rating">Top Rated</option>
-        </select>
-      </div>
+    <div class="static-body">
+      <!-- ===================================================================
+           PLACEHOLDER — replace everything inside .static-body with the real
+           policy text. Plain HTML is already styled by the .static-body rules
+           in styles.css, so no layout work is needed. Supported elements:
+
+             <h2>Section heading</h2>          ← rule above it, use per section
+             <h3>Sub-heading</h3>
+             <p>Paragraph copy.</p>
+             <ul><li>Bulleted point</li></ul>
+             <ol><li>Numbered point</li></ol>
+             <dl><dt>Term</dt><dd>Definition</dd></dl>
+             <blockquote>Callout or quoted clause.</blockquote>
+             <table><tr><th>Header</th><td>Cell</td></tr></table>
+             <a href="…">Link</a>, <strong>emphasis</strong>
+
+           Remove the .static-note block below once real content is in.
+           =================================================================== -->
+      <p class="static-note">
+        <strong>Content coming soon.</strong>
+        The full Terms &amp; Conditions for Sinar Elektronik will be published on
+        this page. In the meantime, please contact us if you have a question about
+        an order, a warranty claim or a return.
+      </p>
     </div>
 
-    <div id="productGrid" class="product-grid"></div>
-    <p id="emptyState" class="empty-state" hidden>No products match your search.</p>
+    <div class="static-related">
+      <h2>Kebijakan lainnya</h2>
+      <div class="static-related-links">
+        <a href="privacy.html">Kebijakan privasi</a>
+        <a href="returns.html">Pengembalian &amp; garansi</a>
+        <a href="aftersales.html">Ajukan klaim garansi</a>
+      </div>
+    </div>
   </main>
 
-  <!-- Cart drawer (shared markup + shared cart-ui.js) -->
   <div id="cartOverlay" class="cart-overlay" hidden></div>
   <aside id="cartDrawer" class="cart-drawer" aria-label="Shopping cart" aria-hidden="true">
     <div class="cart-header">
@@ -157,7 +167,7 @@
   <script src="cart-ui.js"></script>
   <script src="category-icons.js"></script>
   <script src="site-header.js"></script>
-  <script src="listing.js"></script>
+  <script src="static-page.js"></script>
   <script src="chat-widget.js"></script>
 </body>
 </html>
