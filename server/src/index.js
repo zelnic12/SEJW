@@ -112,6 +112,9 @@ app.use("/api", (req, res) => {
 app.use("/uploads", express.static(LEGACY_UPLOADS_DIR));
 
 // ---- Serve the static frontend ----
+app.get("/index.html", (req, res) => {
+  res.redirect(301, "/");
+});
 app.use(express.static(FRONTEND_DIR));
 
 // ---- Central error handler ----
