@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Sinar Elektronik logo">
+  <!-- Circular badge -->
+  <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#C8102E" stroke-width="3"/>
+  <!-- Angular monogram (stylised S / E / J) in brand red -->
+  <g fill="#C8102E">
+    <!-- Top bar of the mark -->
+    <path d="M20 32 h60 l-10 11 H30 z"/>
+    <!-- Left descending stroke forming the wedge -->
+    <path d="M20 32 l14 0 l24 40 l-10 0 z"/>
+    <!-- Inner S/E strokes -->
+    <path d="M34 46 h34 l-7 8 H41 z"/>
+    <path d="M40 58 h26 l-7 8 H47 z"/>
+    <!-- Right vertical accent (J stem) -->
+    <path d="M62 46 l10 0 l-14 24 l-9 0 z"/>
+  </g>
+</svg>
