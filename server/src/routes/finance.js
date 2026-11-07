@@ -17,7 +17,8 @@
 import { Router } from "express";
 import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
-import { cleanInstall, cleanRates, detectInstall } from "../finance/install.js";
+import { cleanInstall, cleanRates, detectInstall, installCost } from "../finance/install.js";
+import { proposeNewProduct } from "../finance/new-product.js";
 import { parseSpreadsheet } from "../import/products.js";
 import { TEMPLATE_COLUMNS, normalizeReceiptRows, MAX_RECEIPT_ROWS } from "../finance/receipts-import.js";
 import ExcelJS from "exceljs";
@@ -250,14 +251,25 @@ router.post("/shopee/parse", async (req, res, next) => {
       fin.existingShopeeRefs(parsed.orders.map(o => o.ref)),
       fin.getInstallRates(),
     ]);
+    const brands = [...new Set(products.map(p => p.brand).filter(Boolean))];
+    const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+    // Highest price each listing sold at, for a new product's price.
+    const topPrice = new Map();
+    for (const o of parsed.orders) for (const ln of o.lines) topPrice.set(ln.key, Math.max(topPrice.get(ln.key) || 0, ln.unitPrice));
     const listings = parsed.listings.map(l => {
       const saved = links.get(l.key);
-      if (saved) return { ...l, ...saved, via: "tersimpan" };
-      const s = suggestProduct(l, products);
-      // "AC + PASANG +PIPA 5M" → installation package read from the variation
-      const inst = detectInstall(l.variation || l.name);
-      return { ...l, productId: s ? s.productId : null, via: s ? s.via : null,
-               installType: inst.type, installMeters: inst.meters };
+      let out;
+      if (saved && (saved.productId == null || products.some(p => p.id === saved.productId))) out = { ...l, ...saved, via: "tersimpan" };
+      else {
+        const s = suggestProduct(l, products);
+        // "AC + PASANG +PIPA 5M" → installation package read from the variation
+        const inst = detectInstall(l.variation || l.name);
+        out = { ...l, productId: s ? s.productId : null, via: s ? s.via : null, installType: inst.type, installMeters: inst.meters };
+      }
+      // What "+ Produk baru" would create; the price leaves out any install package.
+      const price = (topPrice.get(l.key) || 0) - installCost(out.installType, out.installMeters, rates);
+      out.proposal = proposeNewProduct(l, { brands, categories, price });
+      return out;
     });
     res.json({
       fileName: req.file.originalname,
@@ -265,6 +277,7 @@ router.post("/shopee/parse", async (req, res, next) => {
       skipped: parsed.skipped,
       listings,
       rates,
+      categories,
       products: products.map(p => ({ id: p.id, name: p.name, shortName: p.shortName, category: p.category, stock: p.stock, avgCost: p.avgCost })),
     });
   } catch (err) { next(err); }
@@ -288,12 +301,26 @@ router.post("/shopee/commit", wrap(async (req, res) => {
     if (pid != null && !products.has(pid)) throw fin.badRequest(`Produk #${l.productId} tidak ditemukan.`);
     const inst = install(l.installType, l.installMeters, name.slice(0, 40));
     const link = { productId: pid, installType: inst.type, installMeters: inst.meters };
+    if (pid == null && l.newProduct) {
+      const np = l.newProduct;
+      const npName = text(np.name, 300);
+      if (npName.length < 2) throw fin.badRequest(`Nama produk baru untuk "${name.slice(0, 40)}" terlalu pendek.`);
+      link.newProduct = {
+        name: npName,
+        brand: text(np.brand, 60),
+        category: text(np.category, 60) || "Lainnya",
+        price: rupiah(np.price, `Harga produk baru "${npName.slice(0, 40)}"`, { max: 99_999_999 }),
+      };
+    }
     links.set(listingKey(name, variation), link);
-    toSave.push({ name: name.toLowerCase(), variation: variation.toLowerCase(), ...link });
+    // Saved after the import, once new products have ids (the store fills link.productId).
+    toSave.push({ name: name.toLowerCase(), variation: variation.toLowerCase(), link });
   }
 
   const result = await fin.importShopeeOrders({ orders, links, feePercent });
-  await fin.saveShopeeLinks(toSave);
+  await fin.saveShopeeLinks(toSave.map(({ name, variation, link }) => ({
+    name, variation, productId: link.productId, installType: link.installType, installMeters: link.installMeters,
+  })));
   res.json(result);
 }));
 
