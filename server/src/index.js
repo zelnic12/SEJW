@@ -23,6 +23,7 @@ import importsRouter from "./routes/imports.js";
 import categoriesRouter from "./routes/categories.js";
 import { publicShippingZonesRouter, adminShippingZonesRouter } from "./routes/shipping-zones.js";
 import notificationsRouter from "./routes/notifications.js";
+import financeRouter from "./routes/finance.js";
 import { requireAuth } from "./auth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,8 @@ app.use(cors());
 // path only — registered first, because body-parser skips a body it has already
 // parsed, so this wins for /api/admin/imports and the default applies elsewhere.
 app.use("/api/admin/imports", express.json({ limit: "8mb" }));
+// Same for the Shopee order import, which posts a month of parsed orders back.
+app.use("/api/admin/finance", express.json({ limit: "8mb" }));
 app.use(express.json());
 
 // Simple request log.
@@ -98,6 +101,9 @@ app.use("/api/analytics", requireAuth, analyticsRouter);
 
 // New-order / new-message feed for the dashboard's notification bell.
 app.use("/api/admin/notifications", requireAuth, notificationsRouter);
+
+// Bookkeeping: stock-in, expenses, walk-in + Shopee sales, monthly P&L (admin only)
+app.use("/api/admin/finance", requireAuth, financeRouter);
 
 // ---- Unknown API routes → 404 JSON (before static fallback) ----
 app.use("/api", (req, res) => {

@@ -13,6 +13,11 @@ import { renderImport } from "./views/import.js";
 import { renderCategories } from "./views/categories.js";
 import { renderShippingZones } from "./views/shipping-zones.js";
 import { renderLogin } from "./views/login.js";
+import { renderStockIn } from "./views/stock-in.js";
+import { renderStoreSales } from "./views/store-sales.js";
+import { renderShopeeImport } from "./views/shopee-import.js";
+import { renderExpenses } from "./views/expenses.js";
+import { renderFinanceReport } from "./views/finance-report.js";
 import { auth, api, setUnauthorizedHandler } from "./components/api.js";
 import { toast } from "./components/toast.js";
 import { startNotifications, stopNotifications } from "./components/notifications.js";
@@ -31,6 +36,12 @@ const VIEWS = {
   aftersales: { title: "Aftersales", render: renderAftersales },
   messages: { title: "Messages", render: renderMessages_view },
   sales:    { title: "Sales performance", render: renderSales },
+  // Pembukuan (bookkeeping)
+  "finance-report": { title: "Laporan keuangan", render: renderFinanceReport },
+  "stock-in":       { title: "Barang masuk", render: renderStockIn },
+  "store-sales":    { title: "Penjualan toko", render: renderStoreSales },
+  "shopee-import":  { title: "Import Shopee", render: renderShopeeImport },
+  expenses:         { title: "Pengeluaran", render: renderExpenses },
 };
 
 // One route per order status tab, so each status is linkable and survives a

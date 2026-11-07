@@ -20,6 +20,15 @@ Node.js + Express REST API, a PostgreSQL database, and an **admin dashboard**.
 - **Sales performance** — revenue/tax/shipping stats, best-selling products, revenue by category and brand, and a **daily / weekly / monthly** sales chart.
 - Built from small, reusable ES-module components (stat cards, data table, modal, charts) — no frontend framework or build step.
 
+### Pembukuan (bookkeeping) — admin sidebar
+- **Laporan keuangan** — monthly profit & loss across the website, the shop (toko) and Shopee: sales, HPP (cost of goods sold), Shopee fees, expenses and net profit, plus inventory value and best sellers. Downloads as a CSV that opens in Excel.
+- **Barang masuk** — record stock bought from suppliers. Stock goes up and the product's moving-average cost (`products.avg_cost`, never exposed by the public API) is updated.
+- **Penjualan toko** — record walk-in sales; stock comes off the same products the website sells.
+- **Import Shopee** — upload the order export from Shopee Seller Centre (Pesanan Saya → Export). Orders are grouped, cancelled ones skipped, re-uploads de-duplicated by order number, and each Shopee listing is matched to a website product once (by name or model code) and remembered.
+- **Pengeluaran** — running costs such as rent, salaries and utilities.
+
+Tables come from migration `021_bookkeeping.sql`, which runs automatically on start. Parser tests: `npm run test:shopee` in `server/`.
+
 ### Backend
 - **REST API** for products (CRUD), orders (create/list/get/status), and analytics.
 - **PostgreSQL** schema: `products`, `product_images`, `customers`, `orders`, `order_items`.
