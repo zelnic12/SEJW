@@ -15,7 +15,8 @@ import {
 } from "../components/finance-ui.js";
 
 const FEE_KEY = "sinar_shopee_fee_percent";
-const readFee = () => { try { return localStorage.getItem(FEE_KEY) ?? "8"; } catch { return "8"; } };
+// The admin's own choice wins; otherwise the real average from income reports, else 8%.
+const readFee = fallback => { try { return localStorage.getItem(FEE_KEY) ?? fallback; } catch { return fallback; } };
 const saveFee = v => { try { localStorage.setItem(FEE_KEY, String(v)); } catch { /* optional */ } };
 
 const VIA = { "tersimpan": "Tersimpan", "nama": "Nama sama", "kode model": "Kode model" };
@@ -26,10 +27,14 @@ export async function renderShopeeImport(root) {
   if (state) return renderReview(root);
   root.innerHTML = `<p class="admin-status">Memuat…</p>`;
   const month = getMonth();
-  let sales;
-  try { sales = await api.finSales(month, "shopee"); }
+  let sales, stats;
+  try { [sales, stats] = await Promise.all([api.finSales(month, "shopee"), api.finShopeeFeeStats().catch(() => ({ percent: null }))]); }
   catch (err) { root.innerHTML = `<p class="admin-status error">${esc(err.message)}</p>`; return; }
   const sum = k => sales.reduce((s, x) => s + x[k], 0);
+  const realPct = stats?.percent;
+  const fee = readFee(realPct != null ? String(realPct) : "8");
+  const actual = sales.filter(s => s.feeSource === "actual").length;
+  const paid = sales.reduce((s, x) => s + (x.payout ?? 0), 0);
 
   root.innerHTML = `
     <div class="panel">
@@ -42,19 +47,39 @@ export async function renderShopeeImport(root) {
         <div class="fin-upload-row">
           <div class="form-field"><label for="shFile">File export Shopee</label><input type="file" id="shFile" accept=".xlsx,.xls,.csv" required /></div>
           <div class="form-field fin-fee"><label for="shFee">Perkiraan potongan Shopee (%)</label>
-            <input type="number" id="shFee" min="0" max="50" step="0.1" value="${esc(readFee())}" required /></div>
+            <input type="number" id="shFee" min="0" max="50" step="0.1" value="${esc(fee)}" required /></div>
           <button class="btn btn-primary" type="submit" id="shRead">Baca file</button>
         </div>
-        <p class="form-hint">File export pesanan tidak memuat biaya admin &amp; layanan Shopee, jadi potongannya diperkirakan dari persentase ini. Cocokkan dengan menu Penghasilan Saya di Seller Centre.</p>
+        <p class="form-hint">File export pesanan tidak memuat biaya admin &amp; layanan Shopee, jadi potongannya diperkirakan dari persentase ini dulu.
+          Angka aslinya masuk saat laporan penghasilan di bawah diupload.
+          ${realPct != null ? `Rata-rata potongan asli ${esc(String(realPct).replace(".", ","))}% dari ${stats.orders} pesanan terakhir.
+            ${String(realPct) !== String(fee) ? `<button type="button" class="btn btn-ghost btn-xs" id="shUseReal">Pakai ${esc(String(realPct).replace(".", ","))}%</button>` : ""}` : ""}</p>
         <p class="form-error" id="shErr" hidden></p>
       </form>
     </div>
 
-    <div class="fin-toolbar">${monthPicker()}</div>
     <div class="panel">
+      <div class="panel-head"><h2>Laporan penghasilan Shopee</h2></div>
+      <form id="inForm" class="fin-upload">
+        <ol class="fin-steps">
+          <li>Buka <strong>Seller Centre → Keuangan → Penghasilan Saya → Sudah Dilepas</strong>, pilih periode, lalu <strong>Export</strong>.</li>
+          <li>Upload di sini. Potongan perkiraan diganti angka asli, dan dana yang diterima tercatat per pesanan. Laporan untuk pesanan yang belum diimpor disimpan dan dipakai saat pesanannya diimpor.</li>
+        </ol>
+        <div class="fin-upload-row">
+          <div class="form-field"><label for="inFile">File laporan penghasilan</label><input type="file" id="inFile" accept=".xlsx" required /></div>
+          <button class="btn btn-primary" type="submit" id="inRead">Upload laporan</button>
+        </div>
+        <p class="form-error" id="inErr" hidden></p>
+        <div id="inResult"></div>
+      </form>
+    </div>
+
+    <div class="fin-toolbar">${monthPicker()}</div>
+    <div class="panel fin-shopee-list">
       <div class="panel-head">
         <h2>Pesanan Shopee ${esc(monthLabel(month))}</h2>
-        <span class="fin-total">${sales.length} pesanan · <strong>${money(sum("revenue"))}</strong> · potongan ${money(sum("fee"))}</span>
+        <span class="fin-total">${sales.length} pesanan · <strong>${money(sum("revenue"))}</strong> · potongan ${money(sum("fee"))}
+          ${sales.length ? ` · ${actual} dari ${sales.length} pakai potongan asli${paid ? ` · dana diterima ${money(paid)}` : ""}` : ""}</span>
       </div>
       ${dataTable({
         columns: [
@@ -63,7 +88,11 @@ export async function renderShopeeImport(root) {
                 i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}`).join("<br>")}
               <span class="muted-sm">${esc(s.ref)} · ${esc(s.customer || "—")}</span>` },
           { label: "Penjualan", num: true, render: s => money(s.revenue) + (s.install ? `<span class="muted-sm">pasang ${money(s.install)}</span>` : "") },
-          { label: "Potongan", num: true, render: s => money(s.fee) },
+          { label: "Potongan", num: true, render: s => s.feeSource === "actual"
+              ? `${money(s.fee)}<span class="muted-sm">asli</span>`
+              : `<span title="Perkiraan; upload laporan penghasilan untuk angka asli">≈ ${money(s.fee)}</span><span class="muted-sm">perkiraan</span>` },
+          { label: "Dana diterima", num: true, render: s => s.payout != null
+              ? `${money(s.payout)}${s.payoutOn ? `<span class="muted-sm">${tgl(s.payoutOn)}</span>` : ""}` : `<span class="muted-dash">belum</span>` },
           { label: "Laba", num: true, render: s => s.cost && !s.unlinked ? signed(s.profit) : `<span class="muted-dash" title="Ada barang tanpa modal">—</span>` },
           { label: "", render: s => `<button class="btn btn-ghost btn-xs" data-del="${s.id}">Hapus</button>` },
         ],
@@ -73,6 +102,26 @@ export async function renderShopeeImport(root) {
     </div>`;
 
   onMonthChange(root, () => renderShopeeImport(root));
+  root.querySelector("#shUseReal")?.addEventListener("click", () => { root.querySelector("#shFee").value = realPct; saveFee(realPct); root.querySelector("#shUseReal").remove(); });
+
+  root.querySelector("#inForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = root.querySelector("#inErr");
+    err.hidden = true;
+    const file = root.querySelector("#inFile").files[0];
+    if (!file) return;
+    const btn = root.querySelector("#inRead");
+    btn.disabled = true; btn.textContent = "Mengupload…";
+    try {
+      const r = await api.finUploadShopeeIncome(file);
+      toast(`Laporan penghasilan diproses: ${r.matched} pesanan pakai potongan asli`, "success", 5000);
+      await renderShopeeImport(root);
+      root.querySelector("#inResult").innerHTML = incomeResult(r);
+    } catch (ex) {
+      err.textContent = ex.message; err.hidden = false;
+      btn.disabled = false; btn.textContent = "Upload laporan";
+    }
+  });
   const $ = s => root.querySelector(s);
 
   $("#shForm").addEventListener("submit", async e => {
@@ -110,6 +159,22 @@ export async function renderShopeeImport(root) {
       renderShopeeImport(root);
     } catch (ex) { toast(ex.message, "error", 6000); }
   }));
+}
+
+function incomeResult(r) {
+  const pct = r.gross ? (r.actualFee / r.gross * 100).toFixed(2).replace(".", ",") : "0";
+  return `
+    <div class="fin-facts fin-income">
+      <div><span>Pesanan di laporan</span><strong>${r.total}</strong></div>
+      <div><span>Cocok dengan pesanan tercatat</span><strong>${r.matched}</strong></div>
+      <div><span>Harga produk</span><strong>${money(r.gross)}</strong></div>
+      <div><span>Dana diterima</span><strong>${money(r.payout)}</strong></div>
+      <div><span>Potongan asli</span><strong>${money(r.actualFee)} (${pct}%)</strong></div>
+      <div><span>Sebelumnya (perkiraan)</span><strong>${money(r.estimatedFee)}</strong></div>
+    </div>
+    ${r.missing.length ? `<div class="fin-note"><strong>${r.missing.length} pesanan belum diimpor.</strong>
+      Laporannya sudah disimpan dan akan dipakai otomatis saat export pesanannya diimpor.
+      <details class="fin-details"><summary>Lihat nomor pesanan</summary><p>${r.missing.map(esc).join(", ")}</p></details></div>` : ""}`;
 }
 
 function renderReview(root) {
@@ -315,7 +380,7 @@ function renderResult(root, r) {
         <div><span>Pesanan diimpor</span><strong>${r.imported}</strong></div>
         <div><span>Sudah ada (dilewati)</span><strong>${r.duplicates}</strong></div>
         <div><span>Penjualan</span><strong>${money(r.revenue)}</strong></div>
-        <div><span>Potongan Shopee</span><strong>${money(r.fee)}</strong></div>
+        <div><span>Potongan Shopee${r.actualFees ? "" : " (perkiraan)"}</span><strong>${money(r.fee)}</strong></div>
         <div><span>Pasang &amp; material</span><strong>${money(r.install)}</strong></div>
         <div><span>Barang tanpa produk website</span><strong>${r.unlinkedLines}</strong></div>
         <div><span>Produk baru di website</span><strong>${r.createdProducts?.length || 0}</strong></div>

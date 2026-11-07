@@ -12,6 +12,8 @@
 //   GET    /sales?month=&channel=    toko + Shopee sales  POST /sales (toko) DELETE /sales/:id
 //   POST   /shopee/parse             multipart Shopee export → orders + listing suggestions
 //   POST   /shopee/commit            { orders, links, feePercent } → import report
+//   POST   /shopee/income            multipart income report (Penghasilan Saya) → real fees
+//   GET    /shopee/fee-stats         average real Shopee fee %, for the next estimate
 //   GET    /report?month=            monthly profit & loss across website, toko and Shopee
 //   GET    /install-rates            AC installation rates   PUT /install-rates
 import { Router } from "express";
@@ -19,7 +21,8 @@ import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
 import { cleanInstall, cleanRates, detectInstall, installCost } from "../finance/install.js";
 import { proposeNewProduct } from "../finance/new-product.js";
-import { parseSpreadsheet } from "../import/products.js";
+import { parseSpreadsheet, cellToString } from "../import/products.js";
+import { parseIncomeTable } from "../finance/shopee-income.js";
 import { TEMPLATE_COLUMNS, normalizeReceiptRows, MAX_RECEIPT_ROWS } from "../finance/receipts-import.js";
 import ExcelJS from "exceljs";
 import { spreadsheetUpload, runUpload, uploadErrorMessage } from "../upload.js";
@@ -323,6 +326,43 @@ router.post("/shopee/commit", wrap(async (req, res) => {
   })));
   res.json(result);
 }));
+
+// ---- Shopee income report ----
+// The report's first sheet is a summary; the per-order table is the
+// "Penghasilan" sheet, with its header a few rows down.
+async function readIncomeTable(buffer) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer);
+  const ws = wb.worksheets.find(w => /penghasilan|income/i.test(w.name))
+    || wb.worksheets.find(w => w.rowCount > 0);
+  if (!ws) throw Object.assign(new Error("File tidak berisi sheet yang bisa dibaca."), { expose: true });
+  const table = [];
+  ws.eachRow({ includeEmpty: true }, row => {
+    table.push(Array.isArray(row.values) ? row.values.slice(1).map(cellToString) : []);
+  });
+  return table;
+}
+
+router.post("/shopee/income", async (req, res, next) => {
+  try {
+    await runUpload(spreadsheetUpload.single("file"), req, res);
+  } catch (err) {
+    return res.status(400).json({ error: uploadErrorMessage(err) });
+  }
+  if (!req.file) return res.status(400).json({ error: "Pilih file laporan penghasilan Shopee (.xlsx)." });
+  let payouts;
+  try {
+    payouts = parseIncomeTable(await readIncomeTable(req.file.buffer));
+  } catch (err) {
+    return res.status(400).json({ error: err.expose ? err.message : `File tidak bisa dibaca: ${err.message}` });
+  }
+  if (!payouts.length) return res.status(400).json({ error: "Tidak ada pesanan di laporan penghasilan ini." });
+  try {
+    res.json({ fileName: req.file.originalname, ...(await fin.importShopeePayouts(payouts)) });
+  } catch (err) { next(err); }
+});
+
+router.get("/shopee/fee-stats", wrap(async (req, res) => res.json(await fin.shopeeFeeStats())));
 
 // ---- report ----
 router.get("/report", wrap(async (req, res) => res.json(await fin.financeReport(monthOf(req)))));

@@ -216,6 +216,7 @@ export async function listSales(month, channel = "") {
     return {
       id: r.id, channel: r.channel, ref: r.external_ref, soldAt: r.sold_at, customer: r.customer, note: r.note,
       subtotal: n(r.subtotal), discount: n(r.discount), install: n(r.install), fee: n(r.marketplace_fee),
+      feeSource: r.fee_source, payout: r.payout == null ? null : n(r.payout), payoutOn: r.payout_on,
       revenue, cost: n(r.cost), profit: revenue - n(r.marketplace_fee) - n(r.cost),
       unlinked: Number(r.unlinked),
       items: r.items.map(i => ({ ...i, unitPrice: n(i.unitPrice), installCost: n(i.installCost) })),
@@ -354,6 +355,7 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
     const result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, install: 0, fee: 0, warnings: [],
                      createdProducts: [...fresh].map(([id, name]) => ({ id, name })) };
     const shortfall = new Map();
+    const importedRefs = [];
 
     for (const o of orders) {
       if (dup.has(o.ref)) { result.duplicates += 1; continue; }
@@ -385,12 +387,21 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
         result.lines += 1;
       }
       result.imported += 1;
+      importedRefs.push(o.ref);
       result.revenue += revenue;   // before installation; result.install is shown beside it
       result.fee += fee;
     }
 
     for (const p of products.values()) {
       await client.query("UPDATE products SET stock = $1 WHERE id = $2", [p.stock, p.id]);
+    }
+    // Income report uploaded earlier for any of these orders: use its real fee.
+    result.actualFees = await applyShopeePayouts(client, refs);
+    if (result.actualFees) {
+      const { rows: f } = await client.query(
+        "SELECT COALESCE(SUM(marketplace_fee), 0) AS fee FROM sales WHERE channel = 'shopee' AND external_ref = ANY($1::text[])",
+        [importedRefs]);
+      result.fee = n(f[0].fee);
     }
     for (const [id, missing] of shortfall) {
       if (fresh.has(id)) continue;   // a product created just now has no stock yet; that's expected
@@ -411,6 +422,73 @@ export async function saveShopeeLinks(entries) {
                      install_meters = EXCLUDED.install_meters, updated_at = now()`,
       [e.name, e.variation, e.productId, e.installType || "none", e.installMeters ?? null]);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shopee payouts (Laporan Penghasilan)
+// ---------------------------------------------------------------------------
+/**
+ * Set the real Shopee fee on imported sales that have a payout on file:
+ * fee = selling price after seller discounts − what Shopee released.
+ * refs limits it to some orders (null = all). Returns the number updated.
+ */
+async function applyShopeePayouts(client, refs = null) {
+  const { rowCount } = await client.query(
+    `UPDATE sales s
+        SET payout = p.payout,
+            payout_on = p.released_on,
+            marketplace_fee = GREATEST(0, s.subtotal - s.discount - p.payout),
+            fee_source = 'actual'
+       FROM shopee_payouts p
+      WHERE s.channel = 'shopee' AND s.external_ref = p.order_ref
+        ${refs ? "AND s.external_ref = ANY($1::text[])" : ""}`, refs ? [refs] : []);
+  return rowCount;
+}
+
+/**
+ * Store payouts from an income report and apply them. Re-uploading the same
+ * report is harmless. Returns what matched and what still needs its order export.
+ */
+export async function importShopeePayouts(payouts) {
+  return withTransaction(async client => {
+    for (const p of payouts) {
+      await client.query(
+        `INSERT INTO shopee_payouts (order_ref, released_on, product_price, payout, fees, uploaded_at)
+         VALUES ($1, $2, $3, $4, $5, now())
+         ON CONFLICT (order_ref) DO UPDATE SET released_on = EXCLUDED.released_on, product_price = EXCLUDED.product_price,
+           payout = EXCLUDED.payout, fees = EXCLUDED.fees, uploaded_at = now()`,
+        [p.ref, p.releasedOn, p.productPrice, p.payout, JSON.stringify(p.fees)]);
+    }
+    const refs = payouts.map(p => p.ref);
+    const { rows: before } = await client.query(
+      `SELECT external_ref, subtotal - discount AS gross, marketplace_fee, fee_source FROM sales
+        WHERE channel = 'shopee' AND external_ref = ANY($1::text[])`, [refs]);
+    const estimated = before.reduce((s, r) => s + n(r.marketplace_fee), 0);
+    await applyShopeePayouts(client, refs);
+    const found = new Map(before.map(r => [r.external_ref, n(r.gross)]));
+    const matched = payouts.filter(p => found.has(p.ref));
+    const gross = matched.reduce((s, p) => s + found.get(p.ref), 0);
+    const payout = matched.reduce((s, p) => s + p.payout, 0);
+    return {
+      total: payouts.length,
+      matched: matched.length,
+      gross, payout,
+      actualFee: Math.max(0, gross - payout),
+      estimatedFee: estimated,
+      missing: payouts.filter(p => !found.has(p.ref)).map(p => p.ref),
+    };
+  });
+}
+
+/** Average real Shopee fee (% of selling price) over the last 90 days, or null. */
+export async function shopeeFeeStats() {
+  const { rows } = await query(
+    `SELECT COUNT(*)::int AS orders, SUM(subtotal - discount) AS gross, SUM(marketplace_fee) AS fee
+       FROM sales WHERE channel = 'shopee' AND fee_source = 'actual' AND sold_at > now() - interval '90 days'`);
+  const r = rows[0];
+  return r.orders && n(r.gross) > 0
+    ? { orders: r.orders, percent: Math.round(n(r.fee) / n(r.gross) * 1000) / 10 }
+    : { orders: 0, percent: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +519,8 @@ export async function financeReport(month) {
 
   const { rows: chanRows } = await query(
     `SELECT channel, COUNT(*)::int AS orders,
+            COUNT(*) FILTER (WHERE fee_source = 'actual')::int AS actual_fee_orders,
+            COALESCE(SUM(payout), 0) AS payout,
             SUM(subtotal - discount) AS revenue, SUM(marketplace_fee) AS fee
        FROM sales
       WHERE to_char(sold_at AT TIME ZONE $2, 'YYYY-MM') = $1
@@ -463,7 +543,8 @@ export async function financeReport(month) {
     toko:    { orders: 0, gross: 0, install: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
     shopee:  { orders: 0, gross: 0, install: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
   };
-  for (const r of chanRows) Object.assign(channels[r.channel], { orders: r.orders, gross: n(r.revenue), fee: n(r.fee) });
+  for (const r of chanRows) Object.assign(channels[r.channel], { orders: r.orders, gross: n(r.revenue), fee: n(r.fee),
+    actualFeeOrders: r.actual_fee_orders, payout: n(r.payout) });
   for (const r of chanCost) Object.assign(channels[r.channel], { cost: n(r.cost), install: n(r.install), units: r.units, noCostLines: r.no_cost });
   for (const k of ["toko", "shopee"]) channels[k].revenue = channels[k].gross - channels[k].install;
 
