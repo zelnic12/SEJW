@@ -5,6 +5,7 @@
 // time can't lose an update.
 import { query, withTransaction } from "../db/pool.js";
 import { listingKey } from "./shopee.js";
+import { shortProductNames } from "./names.js";
 
 const TZ = "Asia/Jakarta";
 const n = v => (v == null ? 0 : Number(v));
@@ -31,15 +32,19 @@ export async function listCostedProducts() {
     `SELECT id, name, brand, category, price, sale_price, stock, avg_cost
        FROM products ORDER BY lower(name)`
   );
-  return rows.map(r => {
+  // shortName ("Brand + model") is what the bookkeeping screens show and pick by.
+  const short = shortProductNames(rows);
+  return rows
+    .map(r => {
     const price = n(r.price);
     const sale = r.sale_price == null ? null : n(r.sale_price);
     return {
-      id: r.id, name: r.name, brand: r.brand, category: r.category,
+      id: r.id, name: r.name, shortName: short.get(r.id), brand: r.brand, category: r.category,
       price: sale != null && sale >= 0 && sale < price ? sale : price,
       stock: r.stock, avgCost: n(r.avg_cost),
     };
-  });
+    })
+    .sort((a, b) => a.shortName.localeCompare(b.shortName, "id"));
 }
 
 // ---------------------------------------------------------------------------
