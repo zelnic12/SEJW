@@ -79,7 +79,11 @@ export async function renderStockIn(root) {
     const id = pickedProductId($("#rcProduct").value);
     const p = byId.get(id);
     if (!p) return;
-    hint.textContent = `Stok sekarang ${p.stock} · modal rata-rata ${p.avgCost ? money(p.avgCost) : "belum ada"}`;
+    hint.textContent = p.avgCost
+      ? `Stok sekarang ${p.stock} · modal rata-rata ${money(p.avgCost)}`
+      : p.stock > 0
+        ? `Stok sekarang ${p.stock} belum punya modal. Harga beli yang Anda isi akan dipakai sebagai modal untuk semua stok produk ini.`
+        : `Stok sekarang 0 · modal belum ada`;
     try {
       const last = await api.finLastReceipt(id);
       if (last) {
