@@ -178,6 +178,29 @@ export const api = {
   markNotificationRead: id => request(`/admin/notifications/${id}/read`, { method: "POST" }),
   markAllNotificationsRead: () => request("/admin/notifications/read-all", { method: "POST" }),
 
+  // Bookkeeping (pembukuan)
+  finProducts: () => request("/admin/finance/products"),
+  finReceipts: month => request(`/admin/finance/receipts?month=${encodeURIComponent(month)}`),
+  finLastReceipt: productId => request(`/admin/finance/receipts/last/${productId}`),
+  finSuppliers: () => request("/admin/finance/suppliers"),
+  finCreateReceipt: data => request("/admin/finance/receipts", { method: "POST", body: data }),
+  finDeleteReceipt: id => request(`/admin/finance/receipts/${id}`, { method: "DELETE" }),
+  finExpenseCategories: () => request("/admin/finance/expense-categories"),
+  finExpenses: month => request(`/admin/finance/expenses?month=${encodeURIComponent(month)}`),
+  finCreateExpense: data => request("/admin/finance/expenses", { method: "POST", body: data }),
+  finDeleteExpense: id => request(`/admin/finance/expenses/${id}`, { method: "DELETE" }),
+  finSales: (month, channel = "") =>
+    request(`/admin/finance/sales?month=${encodeURIComponent(month)}${channel ? `&channel=${channel}` : ""}`),
+  finCreateSale: data => request("/admin/finance/sales", { method: "POST", body: data }),
+  finDeleteSale: id => request(`/admin/finance/sales/${id}`, { method: "DELETE" }),
+  finParseShopee: file => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return uploadForm("/admin/finance/shopee/parse", fd);
+  },
+  finCommitShopee: payload => request("/admin/finance/shopee/commit", { method: "POST", body: payload }),
+  finReport: month => request(`/admin/finance/report?month=${encodeURIComponent(month)}`),
+
   // Analytics
   overview: () => request("/analytics/overview"),
   summary: () => request("/analytics/summary"),

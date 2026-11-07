@@ -405,8 +405,10 @@ export async function createOrder(order) {
     // Insert line items (snapshotting regular + charged price) and decrement stock.
     for (const item of order.items) {
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, regular_price, quantity, note)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        // unit_cost snapshots the product's moving-average cost (modal) so the
+        // finance report's HPP stays right after later purchases change it.
+        `INSERT INTO order_items (order_id, product_id, product_name, unit_price, regular_price, quantity, note, unit_cost)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,(SELECT avg_cost FROM products WHERE id = $2))`,
         [order.id, item.id, item.name, item.price, item.regularPrice ?? item.price, item.qty,
          item.note ?? null]
       );
