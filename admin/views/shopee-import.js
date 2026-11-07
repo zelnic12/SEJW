@@ -12,7 +12,7 @@ import { toast } from "../components/toast.js";
 import {
   getMonth, monthPicker, onMonthChange, monthLabel, tgl,
   productDatalist, productOptionLabel, pickedProductId, confirmAction, signed,
-  installControl, readInstall, installCost, installText, meterPresets, readRupiah,
+  installControl, readInstall, installCost, installText, meterPresets, readRupiah, editInstallDialog,
 } from "../components/finance-ui.js";
 
 const VIA = { "tersimpan": "Tersimpan", "nama": "Nama sama", "kode model": "Kode model" };
@@ -24,8 +24,8 @@ export async function renderShopeeImport(root) {
   if (state) return renderReview(root);
   root.innerHTML = `<p class="admin-status">Memuat…</p>`;
   const month = getMonth();
-  let sales;
-  try { sales = await api.finSales(month, "shopee"); }
+  let sales, rates;
+  try { [sales, rates] = await Promise.all([api.finSales(month, "shopee"), api.finInstallRates()]); }
   catch (err) { root.innerHTML = `<p class="admin-status error">${esc(err.message)}</p>`; return; }
   const sum = k => sales.reduce((s, x) => s + (x[k] ?? 0), 0);
   const estimated = sales.filter(s => s.feeSource !== "actual").length;
@@ -58,7 +58,8 @@ export async function renderShopeeImport(root) {
         columns: [
           { label: "Tgl", render: s => `<span class="fin-date">${tgl(s.soldAt)}</span>` },
           { label: "Pesanan", render: s => `${s.items.map(i => `${esc(i.name)} <span class="muted-dash">×${i.qty}</span>${i.productId ? "" : ` <span class="fin-tag">tanpa stok</span>`}${
-                i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}`).join("<br>")}
+                i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}${
+                isACText(i.name) ? ` <button type="button" class="btn btn-ghost btn-xs" data-inst="${s.id}:${i.id}">Ubah pasang</button>` : ""}`).join("<br>")}
               <span class="muted-sm">${esc(s.ref)} · ${esc(s.customer || "—")}</span>` },
           { label: "Penjualan", num: true, render: s => money(s.revenue) + (s.install ? `<span class="muted-sm">pasang ${money(s.install)}</span>` : "") },
           { label: "Potongan", num: true, render: s => s.feeSource === "actual"
@@ -93,6 +94,12 @@ export async function renderShopeeImport(root) {
       btn.disabled = false; btn.textContent = "Baca file";
     }
   });
+
+  root.querySelectorAll("[data-inst]").forEach(btn => btn.addEventListener("click", async () => {
+    const [saleId, itemId] = btn.dataset.inst.split(":").map(Number);
+    const item = sales.find(x => x.id === saleId)?.items.find(i => i.id === itemId);
+    if (item && await editInstallDialog({ api, toast, saleId, item, rates })) renderShopeeImport(root);
+  }));
 
   root.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", async () => {
     const s = sales.find(x => x.id === Number(btn.dataset.del));

@@ -230,7 +230,7 @@ export async function listSales(month, channel = "") {
             COALESCE(SUM(si.quantity * si.install_cost), 0) AS install,
             COUNT(si.id) FILTER (WHERE si.product_id IS NULL) AS unlinked,
             json_agg(json_build_object('name', si.product_name, 'qty', si.quantity, 'unitPrice', si.unit_price,
-                     'productId', si.product_id, 'installType', si.install_type, 'installMeters', si.install_meters,
+                     'id', si.id, 'productId', si.product_id, 'installType', si.install_type, 'installMeters', si.install_meters,
                      'installCost', si.install_cost) ORDER BY si.id) AS items
        FROM sales s JOIN sale_items si ON si.sale_id = s.id
       WHERE to_char(s.sold_at AT TIME ZONE $2, 'YYYY-MM') = $1 ${filter}
@@ -296,6 +296,23 @@ export async function createStoreSale({ soldAt, customer = "", note = "", discou
     }
     return saleId;
   });
+}
+
+/**
+ * Change the AC installation on a recorded sale line (e.g. a Shopee order
+ * imported from the income report as "Tanpa pasang"). Uses today's rates.
+ * Returns the new per-unit cost, or null when the line doesn't exist.
+ */
+export async function updateSaleItemInstall(saleId, itemId, { type, meters }) {
+  const { rows } = await query("SELECT unit_price FROM sale_items WHERE id = $1 AND sale_id = $2", [itemId, saleId]);
+  if (!rows[0]) return null;
+  const cost = installCost(type, meters, await getInstallRates());
+  if (cost > n(rows[0].unit_price)) {
+    throw badRequest(`Biaya pasang Rp ${cost.toLocaleString("id-ID")} lebih besar dari harga jual barang ini.`);
+  }
+  await query("UPDATE sale_items SET install_type = $1, install_meters = $2, install_cost = $3 WHERE id = $4",
+    [type, meters, cost, itemId]);
+  return cost;
 }
 
 /** Void a sale (toko or Shopee): delete it and put linked units back in stock. */

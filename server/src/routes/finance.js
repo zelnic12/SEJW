@@ -263,6 +263,15 @@ router.post("/sales", wrap(async (req, res) => {
   res.status(201).json({ id });
 }));
 
+// Fix the installation package of a recorded sale line.
+router.put("/sales/:id/items/:itemId/install", wrap(async (req, res) => {
+  const saleId = idParam(req);
+  const itemId = int(req.params.itemId, "ID barang", { max: 2_147_483_647 });
+  const inst = install(req.body?.installType, req.body?.installMeters);
+  const cost = await fin.updateSaleItemInstall(saleId, itemId, inst);
+  cost == null ? res.status(404).json({ error: "Barang penjualan tidak ditemukan." }) : res.json({ installCost: cost });
+}));
+
 router.delete("/sales/:id", wrap(async (req, res) => {
   const ok = await fin.deleteSale(idParam(req));
   ok ? res.status(204).end() : res.status(404).json({ error: "Penjualan tidak ditemukan." });
