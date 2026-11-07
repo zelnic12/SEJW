@@ -1054,3 +1054,8 @@ td[data-f="qty"] .fin-cell-input, .fin-ri td:nth-child(4) .fin-cell-input { widt
 .fin-lines td[data-install] { min-width: 250px; }
 .fin-lines .fin-install select { flex: 0 1 180px; }
 .fin-lines .fin-tag { margin-left: .35rem; }
+
+/* Barang masuk: add a new product inline */
+.fin-newprod-offer { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .85rem; color: var(--text-secondary); margin-top: -.4rem; }
+.fin-newprod-box { border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: .8rem; margin: 0; display: flex; flex-direction: column; gap: .7rem; min-width: 0; }
+.fin-newprod-box legend { font-size: .8rem; font-weight: 700; padding: 0 .3rem; display: flex; align-items: center; gap: .5rem; }

@@ -75,9 +75,30 @@ function renderPreview(root, parsed, products, onExit) {
 
   const rowProblems = r => {
     const out = r.problems.filter(p => p !== "Produk tidak ditemukan");
-    if (!byId.has(r.productId)) out.unshift("Pilih produk");
+    if (r.newProduct) {
+      if (String(r.newProduct.name || "").trim().length < 2) out.unshift("Isi nama produk baru");
+      if (!(r.newProduct.price > 0)) out.unshift("Isi harga jual produk baru");
+    } else if (!byId.has(r.productId)) out.unshift("Pilih produk");
     return out;
   };
+
+  // Product cell: an existing product, or "+ Produk baru" for one that isn't on the website.
+  const productCell = (r, i) => r.newProduct ? `
+      <div class="fin-newprod">
+        <div class="fin-newprod-head"><span class="fin-tag ok">Produk baru</span>
+          <button type="button" class="btn btn-ghost btn-xs" data-cancel-new="${i}">Batal</button></div>
+        <input class="fin-match-input" data-np="name" value="${esc(r.newProduct.name)}" aria-label="Nama produk baru baris ${r.row}" />
+        <div class="fin-newprod-row">
+          <input class="fin-match-input" data-np="category" list="riCategories" value="${esc(r.newProduct.category || "")}" placeholder="Kategori" aria-label="Kategori" />
+          <input class="fin-match-input" data-np="brand" value="${esc(r.newProduct.brand || "")}" placeholder="Merek" aria-label="Merek" />
+          <input class="fin-match-input num" data-np="price" inputmode="numeric" value="${r.newProduct.price ? Number(r.newProduct.price).toLocaleString("id-ID") : ""}" placeholder="Harga jual" aria-label="Harga jual di website" />
+        </div>
+        <span class="muted-sm">di file: ${esc(r.productText || "—")}</span>
+      </div>` : `
+      <input class="fin-match-input" data-f="product" list="riProducts" value="${byId.has(r.productId) ? esc(productOptionLabel(byId.get(r.productId))) : ""}"
+        placeholder="Pilih produk" aria-label="Produk baris ${r.row}" />
+      <span class="muted-sm">${r.via ? `${esc(VIA[r.via] || r.via)} · ` : ""}di file: ${esc(r.productText || "—")}
+        ${byId.has(r.productId) ? "" : ` · <button type="button" class="btn btn-ghost btn-xs" data-new="${i}">+ Produk baru</button>`}</span>`;
 
   root.innerHTML = `
     <div class="panel">
@@ -101,6 +122,7 @@ function renderPreview(root, parsed, products, onExit) {
 
     <div class="panel">
       ${productDatalist("riProducts", products)}
+      <datalist id="riCategories">${(parsed.categories || []).map(c => `<option value="${esc(c)}"></option>`).join("")}</datalist>
       ${rows.length ? `
       <div class="table-scroll">
         <table class="data-table fin-ri">
@@ -108,11 +130,7 @@ function renderPreview(root, parsed, products, onExit) {
           <tbody>${rows.map((r, i) => `
             <tr data-i="${i}">
               <td class="fin-date">${r.row}</td>
-              <td>
-                <input class="fin-match-input" data-f="product" list="riProducts" value="${byId.has(r.productId) ? esc(productOptionLabel(byId.get(r.productId))) : ""}"
-                  placeholder="Pilih produk" aria-label="Produk baris ${r.row}" />
-                <span class="muted-sm">${r.via ? `${esc(VIA[r.via] || r.via)} · ` : ""}di file: ${esc(r.productText || "—")}</span>
-              </td>
+              <td data-product="${i}">${productCell(r, i)}</td>
               <td class="fin-date">${r.receivedOn ? tgl(r.receivedOn) : `<span class="muted-dash">${r.dateProblem ? `${esc(r.dateProblem)}, ` : ""}pakai tanggal di atas</span>`}</td>
               <td class="num"><input class="fin-cell-input num" data-f="qty" inputmode="numeric" value="${r.quantity ?? ""}" aria-label="Jumlah baris ${r.row}" /></td>
               <td class="num"><input class="fin-cell-input num" data-f="cost" inputmode="numeric" value="${r.unitCost != null ? r.unitCost.toLocaleString("id-ID") : ""}" aria-label="Harga beli baris ${r.row}" /></td>
@@ -136,8 +154,16 @@ function renderPreview(root, parsed, products, onExit) {
     let units = 0, total = 0, bad = 0;
     root.querySelectorAll("tr[data-i]").forEach(tr => {
       const r = rows[Number(tr.dataset.i)];
-      const v = tr.querySelector('[data-f="product"]').value.trim();
-      r.productId = v ? pickedProductId(v) : null;
+      const input = tr.querySelector('[data-f="product"]');
+      if (r.newProduct) {
+        r.productId = null;
+        for (const el of tr.querySelectorAll("[data-np]")) {
+          r.newProduct[el.dataset.np] = el.dataset.np === "price" ? readCost(el.value) : el.value.trim();
+        }
+      } else {
+        const v = input.value.trim();
+        r.productId = v ? pickedProductId(v) : null;
+      }
       const q = Number(tr.querySelector('[data-f="qty"]').value.replace(/\./g, ""));
       const c = readCost(tr.querySelector('[data-f="cost"]').value);
       r.quantity = Number.isInteger(q) && q >= 1 ? q : null;
@@ -147,7 +173,7 @@ function renderPreview(root, parsed, products, onExit) {
         ...(r.unitCost == null ? ["Harga beli kosong atau tidak terbaca"] : []),
       ];
       const probs = rowProblems(r);
-      tr.querySelector('[data-f="product"]').classList.toggle("invalid", !byId.has(r.productId));
+      input?.classList.toggle("invalid", !byId.has(r.productId));
       tr.querySelector('[data-f="total"]').textContent = r.quantity && r.unitCost != null ? money(r.quantity * r.unitCost) : "—";
       tr.querySelector('[data-f="status"]').innerHTML = probs.length
         ? `<span class="fin-tag bad">${esc(probs.join("; "))}</span>`
@@ -162,6 +188,21 @@ function renderPreview(root, parsed, products, onExit) {
   };
   root.querySelector("tbody")?.addEventListener("change", refresh);
   root.querySelector("tbody")?.addEventListener("input", e => { if (e.target.dataset.f !== "product") refresh(); });
+  root.querySelector("tbody")?.addEventListener("click", e => {
+    const btn = e.target.closest("[data-new], [data-cancel-new]");
+    if (!btn) return;
+    const i = Number(btn.dataset.new ?? btn.dataset.cancelNew);
+    const r = rows[i];
+    if (btn.dataset.new !== undefined) {
+      // Same product typed on several rows: one new product, reuse what was filled in.
+      const twin = rows.find(x => x !== r && x.newProduct && x.productText.toLowerCase() === r.productText.toLowerCase());
+      r.newProduct = twin ? { ...twin.newProduct } : { ...(r.proposal || { name: r.productText }), price: null };
+    } else delete r.newProduct;
+    const cell = root.querySelector(`[data-product="${i}"]`);
+    cell.innerHTML = productCell(r, i);
+    cell.querySelector("[data-np='price'], [data-f='product']")?.focus();
+    refresh();
+  });
   refresh();
 
   $("#riSave").addEventListener("click", async () => {
@@ -178,10 +219,12 @@ function renderPreview(root, parsed, products, onExit) {
     btn.disabled = true; btn.textContent = "Menyimpan…";
     try {
       const result = await api.finBulkReceipts(rows.map(r => ({
-        row: r.row, receivedOn: r.receivedOn || fallback, productId: r.productId,
+        row: r.row, receivedOn: r.receivedOn || fallback,
+        ...(r.newProduct ? { productId: null, newProduct: r.newProduct } : { productId: r.productId }),
         quantity: r.quantity, unitCost: r.unitCost, supplier: r.supplier, note: r.note,
       })));
-      toast(`${result.count} barang masuk tersimpan (${result.units} unit, ${money(result.total)})`, "success", 5000);
+      toast(`${result.count} barang masuk tersimpan (${result.units} unit, ${money(result.total)})`
+        + (result.createdProducts?.length ? ` · ${result.createdProducts.length} produk baru ditambahkan ke website` : ""), "success", 6000);
       onExit();
     } catch (ex) {
       err.textContent = ex.message; err.hidden = false;

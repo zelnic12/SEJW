@@ -82,8 +82,28 @@ export async function lastReceiptFor(productId) {
   return rows[0] ? { unitCost: n(rows[0].unit_cost), supplier: rows[0].supplier } : null;
 }
 
+/**
+ * A website product by name inside an open transaction: the existing one with
+ * the same name (case-insensitive), or a new one with stock 0.
+ * np: { name, brand, category, price }. Returns { id, created }.
+ */
+export async function ensureProduct(client, np) {
+  const { rows } = await client.query("SELECT id FROM products WHERE lower(name) = lower($1) LIMIT 1", [np.name]);
+  if (rows[0]) return { id: rows[0].id, created: false };
+  const { rows: ins } = await client.query(
+    "INSERT INTO products (name, brand, category, price, stock) VALUES ($1, $2, $3, $4, 0) RETURNING id",
+    [np.name, np.brand || "", np.category || "Lainnya", np.price || 0]);
+  return { id: ins[0].id, created: true };
+}
+
 // One receipt inside an open transaction: lock the product, add stock, update avg cost.
-async function applyReceipt(client, { receivedOn, productId, quantity, unitCost, supplier = "", note = "" }) {
+// With newProduct instead of productId, the product is added to the catalogue first.
+async function applyReceipt(client, { receivedOn, productId, newProduct, quantity, unitCost, supplier = "", note = "" }, createdOut = null) {
+  if (productId == null && newProduct) {
+    const p = await ensureProduct(client, newProduct);
+    productId = p.id;
+    if (p.created && createdOut) createdOut.push({ id: p.id, name: newProduct.name });
+  }
   const { rows } = await client.query("SELECT stock, avg_cost FROM products WHERE id = $1 FOR UPDATE", [productId]);
   if (!rows[0]) throw badRequest(`Produk #${productId} tidak ditemukan.`);
   const stock = Math.max(0, rows[0].stock);
@@ -105,7 +125,11 @@ async function applyReceipt(client, { receivedOn, productId, quantity, unitCost,
 }
 
 export async function createReceipt(receipt) {
-  return withTransaction(client => applyReceipt(client, receipt));
+  return withTransaction(async client => {
+    const created = [];
+    const id = await applyReceipt(client, receipt, created);
+    return { id, createdProduct: created[0] || null };
+  });
 }
 
 /** Many receipts at once (Excel import): all are saved, or none are. */
@@ -114,8 +138,10 @@ export async function createReceipts(receipts) {
     // Oldest first, so the moving average follows the order goods arrived in.
     const ordered = receipts.map((r, i) => ({ r, i }))
       .sort((a, b) => a.r.receivedOn.localeCompare(b.r.receivedOn) || a.i - b.i);
-    for (const { r } of ordered) await applyReceipt(client, r);
+    const created = [];
+    for (const { r } of ordered) await applyReceipt(client, r, created);
     return {
+      createdProducts: created,
       count: receipts.length,
       units: receipts.reduce((s, r) => s + r.quantity, 0),
       total: receipts.reduce((s, r) => s + r.quantity * r.unitCost, 0),
@@ -332,15 +358,9 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
       const np = link.newProduct;
       const key = np.name.toLowerCase();
       if (!created.has(key)) {
-        const { rows: existing } = await client.query("SELECT id FROM products WHERE lower(name) = $1 LIMIT 1", [key]);
-        if (existing[0]) created.set(key, existing[0].id);
-        else {
-          const { rows: ins } = await client.query(
-            `INSERT INTO products (name, brand, category, price, stock) VALUES ($1, $2, $3, $4, 0) RETURNING id`,
-            [np.name, np.brand, np.category, np.price]);
-          created.set(key, ins[0].id);
-          fresh.set(ins[0].id, np.name);
-        }
+        const p = await ensureProduct(client, np);
+        created.set(key, p.id);
+        if (p.created) fresh.set(p.id, np.name);
       }
       link.productId = created.get(key);
       delete link.newProduct;
