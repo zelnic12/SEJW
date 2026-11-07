@@ -25,6 +25,10 @@ export async function renderFinanceReport(root) {
 
   const warnings = [];
   if (t.noCostLines) warnings.push(`${t.noCostLines} baris penjualan belum punya modal (produk belum dicatat di Barang masuk, atau barang Shopee tanpa produk website). HPP-nya dihitung Rp 0, jadi laba di bawah lebih tinggi dari sebenarnya.`);
+  const sh = c.shopee;
+  if (sh.orders && sh.actualFeeOrders < sh.orders) {
+    warnings.push(`Potongan Shopee untuk ${sh.orders - sh.actualFeeOrders} dari ${sh.orders} pesanan masih perkiraan. Upload laporan penghasilan Shopee di halaman Import Shopee untuk memakai angka asli.`);
+  }
   if (r.inventory.withoutCost) warnings.push(`${r.inventory.withoutCost} produk punya stok tapi modalnya belum tercatat, sehingga nilai persediaan belum lengkap.`);
 
   root.innerHTML = `

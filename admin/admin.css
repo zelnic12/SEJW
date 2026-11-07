@@ -1040,3 +1040,8 @@ td[data-f="qty"] .fin-cell-input, .fin-ri td:nth-child(4) .fin-cell-input { widt
 .fin-newprod .fin-match-input { margin-bottom: 0; }
 .fin-match-input.num { text-align: right; font-variant-numeric: tabular-nums; }
 .fin-note:not(.warn) { background: var(--surface-secondary); border: 1px solid var(--border); }
+
+/* Import Shopee: income report */
+.fin-shopee-list .data-table td.num, .fin-shopee-list .data-table th.num { white-space: nowrap; }
+.fin-shopee-list .data-table td:nth-child(2) { min-width: 260px; }
+.fin-income { margin-top: .4rem; }
