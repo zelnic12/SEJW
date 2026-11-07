@@ -3,6 +3,9 @@
 //   GET    /products                 products with stock + average cost (modal)
 //   GET    /receipts?month=YYYY-MM   barang masuk         POST /receipts   DELETE /receipts/:id
 //   GET    /receipts/last/:productId last purchase (prefills the form)
+//   GET    /receipts/template        Excel template listing every product
+//   POST   /receipts/parse           multipart Excel → rows matched to products (preview)
+//   POST   /receipts/bulk            { rows } → save many receipts at once
 //   GET    /suppliers                recent supplier names
 //   GET    /expenses?month=          pengeluaran          POST /expenses   DELETE /expenses/:id
 //   GET    /expense-categories
@@ -16,6 +19,8 @@ import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
 import { cleanInstall, cleanRates, detectInstall } from "../finance/install.js";
 import { parseSpreadsheet } from "../import/products.js";
+import { TEMPLATE_COLUMNS, normalizeReceiptRows, MAX_RECEIPT_ROWS } from "../finance/receipts-import.js";
+import ExcelJS from "exceljs";
 import { spreadsheetUpload, runUpload, uploadErrorMessage } from "../upload.js";
 
 const router = Router();
@@ -88,6 +93,72 @@ router.post("/receipts", wrap(async (req, res) => {
     note: text(b.note, 300),
   });
   res.status(201).json({ id });
+}));
+
+// ---- barang masuk from Excel ----
+router.get("/receipts/template", wrap(async (req, res) => {
+  const products = await fin.listCostedProducts();
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Barang masuk", { views: [{ state: "frozen", ySplit: 1 }] });
+  ws.columns = TEMPLATE_COLUMNS.map(c => ({ header: c.header, key: c.key, width: c.width }));
+  for (const p of products) ws.addRow({ productId: p.id, product: p.shortName, stock: p.stock });
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF1F1F1" } };
+  ws.getColumn("date").numFmt = "dd/mm/yyyy";
+  ws.getColumn("cost").numFmt = "#,##0";
+  for (const key of ["productId", "product", "stock"]) ws.getColumn(key).font = { color: { argb: "FF6B7280" } };
+  const help = wb.addWorksheet("Petunjuk");
+  help.getColumn(1).width = 100;
+  [
+    "Cara mengisi:",
+    "1. Isi kolom Jumlah dan Harga beli / unit hanya untuk barang yang datang. Baris dengan Jumlah kosong dilewati.",
+    "2. Tanggal boleh dikosongkan; tanggal yang dipilih saat import akan dipakai. Format: 07/11/2026.",
+    "3. Jangan ubah kolom ID produk. Produk baru bisa ditulis di kolom Produk dengan merek + tipe, mis. TCL TAC-05CSD/XSS.",
+    "4. Satu produk boleh muncul di beberapa baris (mis. dari supplier berbeda).",
+    "5. Simpan sebagai .xlsx lalu upload di Pembukuan → Barang masuk → Import Excel.",
+  ].forEach(t => help.addRow([t]));
+  help.getRow(1).font = { bold: true };
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="template-barang-masuk.xlsx"');
+  res.end(Buffer.from(await wb.xlsx.writeBuffer()));
+}));
+
+router.post("/receipts/parse", async (req, res, next) => {
+  try {
+    await runUpload(spreadsheetUpload.single("file"), req, res);
+  } catch (err) {
+    return res.status(400).json({ error: uploadErrorMessage(err) });
+  }
+  if (!req.file) return res.status(400).json({ error: "Pilih file Excel barang masuk (.xlsx)." });
+  try {
+    const products = await fin.listCostedProducts();
+    let parsed;
+    try {
+      const sheet = await parseSpreadsheet(req.file.buffer, req.file.originalname);
+      parsed = normalizeReceiptRows(sheet.headers, sheet.rows, products);
+    } catch (err) {
+      return res.status(400).json({ error: err.expose ? err.message : `File tidak bisa dibaca: ${err.message}` });
+    }
+    res.json({ fileName: req.file.originalname, ...parsed, today: todayJakarta() });
+  } catch (err) { next(err); }
+});
+
+router.post("/receipts/bulk", wrap(async (req, res) => {
+  const list = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!list.length) throw fin.badRequest("Tidak ada barang masuk untuk disimpan.");
+  if (list.length > MAX_RECEIPT_ROWS) throw fin.badRequest(`Maksimal ${MAX_RECEIPT_ROWS} baris per import.`);
+  const receipts = list.map((r, k) => {
+    const label = `Baris ${r?.row ?? k + 1}`;
+    return {
+      receivedOn: date(r?.receivedOn, `${label}: tanggal`),
+      productId: int(r?.productId, `${label}: produk`, { max: 2_147_483_647 }),
+      quantity: int(r?.quantity, `${label}: jumlah`),
+      unitCost: rupiah(r?.unitCost, `${label}: harga beli`),
+      supplier: text(r?.supplier, 120),
+      note: text(r?.note, 300),
+    };
+  });
+  res.status(201).json(await fin.createReceipts(receipts));
 }));
 
 router.delete("/receipts/:id", wrap(async (req, res) => {

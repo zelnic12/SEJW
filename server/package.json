@@ -17,7 +17,7 @@
     "db:setup": "node src/db/migrate.js && node src/db/seed.js && node src/db/seed-admin.js",
     "db:demo": "node src/db/migrate.js && node src/db/seed.js && node src/db/seed-orders.js && node src/db/seed-admin.js",
     "test:payment-failure": "node tests/payment-failure.test.mjs",
-    "test:shopee": "node tests/shopee-import.test.mjs && node tests/product-names.test.mjs && node tests/install.test.mjs"
+    "test:shopee": "node tests/shopee-import.test.mjs && node tests/product-names.test.mjs && node tests/install.test.mjs && node tests/receipts-import.test.mjs"
   },
   "engines": {
     "node": ">=18"

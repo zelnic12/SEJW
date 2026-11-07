@@ -69,6 +69,24 @@ async function uploadForm(path, formData, method = "POST") {
   return data;
 }
 
+/** GET a file (e.g. an Excel template) with the admin token, as a Blob. */
+async function downloadBlob(path) {
+  const headers = {};
+  const token = auth.getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}${path}`, { headers });
+  if (res.status === 401) {
+    auth.clear();
+    if (onUnauthorized) onUnauthorized();
+    throw new AuthError("Your session has expired. Please sign in again.");
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Download failed (${res.status})`);
+  }
+  return res.blob();
+}
+
 export const api = {
   // Auth
   login: (username, password) => request("/auth/login", { method: "POST", body: { username, password }, authRequired: false }),
@@ -183,6 +201,13 @@ export const api = {
   finReceipts: month => request(`/admin/finance/receipts?month=${encodeURIComponent(month)}`),
   finLastReceipt: productId => request(`/admin/finance/receipts/last/${productId}`),
   finSuppliers: () => request("/admin/finance/suppliers"),
+  finReceiptTemplate: () => downloadBlob("/admin/finance/receipts/template"),
+  finParseReceipts: file => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return uploadForm("/admin/finance/receipts/parse", fd);
+  },
+  finBulkReceipts: rows => request("/admin/finance/receipts/bulk", { method: "POST", body: { rows } }),
   finCreateReceipt: data => request("/admin/finance/receipts", { method: "POST", body: data }),
   finDeleteReceipt: id => request(`/admin/finance/receipts/${id}`, { method: "DELETE" }),
   finExpenseCategories: () => request("/admin/finance/expense-categories"),
