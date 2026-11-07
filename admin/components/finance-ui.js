@@ -111,3 +111,90 @@ export function downloadCsv(filename, rows) {
 }
 
 export const signed = n => (n < 0 ? `<span class="fin-neg">−${money(Math.abs(n))}</span>` : money(n));
+
+// ---- AC installation (jasa pasang) ----
+// Mirrors server/src/finance/install.js so forms can show the cost while typing;
+// the server recomputes it from the saved rates when the sale is stored.
+export const INSTALL_LABELS = {
+  none: "Tanpa pasang",
+  full: "Pasang + material",
+  service: "Pasang saja",
+  material: "Material saja",
+};
+export const needsMeters = type => type === "full" || type === "material";
+export function installCost(type, meters, r) {
+  const material = m => m * (r.pipePerMeter + r.cablePerMeter) + r.ductTape + r.drainHose + r.bracket;
+  if (type === "service") return r.service;
+  if (type === "full") return r.service + material(meters);
+  if (type === "material") return material(meters);
+  return 0;
+}
+export const installText = (type, meters) =>
+  type && type !== "none" ? `${INSTALL_LABELS[type]}${needsMeters(type) && meters ? ` ${meters} m` : ""}` : "";
+
+/** Select + meters input for one line. prefix makes the ids unique. */
+export function installControl(prefix, type = "none", meters = 3) {
+  return `
+    <div class="fin-install">
+      <select id="${prefix}Type" data-f="installType" aria-label="Jasa pasang">
+        ${Object.entries(INSTALL_LABELS).map(([v, l]) => `<option value="${v}" ${v === type ? "selected" : ""}>${l}</option>`).join("")}
+      </select>
+      <span class="fin-install-m" ${needsMeters(type) ? "" : "hidden"}>
+        <input id="${prefix}Meters" data-f="installMeters" type="number" min="1" max="50" step="1" value="${meters || 3}" list="finMeterPresets" aria-label="Panjang pipa (meter)" />
+        <span>m</span>
+      </span>
+    </div>`;
+}
+export const meterPresets = `<datalist id="finMeterPresets"><option value="3"></option><option value="5"></option></datalist>`;
+
+/** Read an installControl inside el. */
+export function readInstall(el) {
+  const type = el.querySelector('[data-f="installType"]')?.value || "none";
+  const m = Number(el.querySelector('[data-f="installMeters"]')?.value);
+  el.querySelector(".fin-install-m")?.toggleAttribute("hidden", !needsMeters(type));
+  return { type, meters: needsMeters(type) ? m : null, valid: !needsMeters(type) || (Number.isInteger(m) && m >= 1 && m <= 50) };
+}
+
+/** Editable rates panel. onSaved(rates) after a successful save. */
+export const RATE_FIELDS = [
+  ["service", "Jasa pasang (per AC)"],
+  ["pipePerMeter", "Pipa (per meter)"],
+  ["cablePerMeter", "Kabel listrik (per meter)"],
+  ["ductTape", "Duct tape (per pasang)"],
+  ["drainHose", "Selang pembuangan 2 m (per pasang)"],
+  ["bracket", "Bracket (per pasang)"],
+];
+export function ratesPanelHTML(rates) {
+  return `
+    <details class="panel fin-rates">
+      <summary><h2>Biaya pasang AC</h2><span class="fin-total">Pasang + material 3 m ${money(installCost("full", 3, rates))} · 5 m ${money(installCost("full", 5, rates))}</span></summary>
+      <form id="ratesForm" class="fin-form" autocomplete="off">
+        <p class="form-hint">Dipakai untuk memotong harga jual AC yang dijual dengan pemasangan. Perubahan hanya berlaku untuk penjualan berikutnya.</p>
+        <div class="form-grid">
+          ${RATE_FIELDS.map(([k, l]) => `<div class="form-field"><label for="rate_${k}">${l}</label>
+            <input id="rate_${k}" data-rate="${k}" inputmode="numeric" value="${Number(rates[k]).toLocaleString("id-ID")}" /></div>`).join("")}
+        </div>
+        <p class="form-error" id="ratesErr" hidden></p>
+        <button class="btn btn-ghost btn-sm" type="submit">Simpan tarif</button>
+      </form>
+    </details>`;
+}
+export function wireRatesPanel(root, api, toast, onSaved) {
+  const form = root.querySelector("#ratesForm");
+  form?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = root.querySelector("#ratesErr");
+    err.hidden = true;
+    const rates = {};
+    for (const input of form.querySelectorAll("[data-rate]")) {
+      const v = readRupiah(input.value);
+      if (!Number.isFinite(v) || v < 0) { err.textContent = "Isi semua tarif dengan angka."; err.hidden = false; return; }
+      rates[input.dataset.rate] = v;
+    }
+    try {
+      const saved = await api.finSaveInstallRates(rates);
+      toast("Tarif pasang AC tersimpan", "success");
+      onSaved(saved);
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  });
+}

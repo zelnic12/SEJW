@@ -6,6 +6,7 @@
 import { query, withTransaction } from "../db/pool.js";
 import { listingKey } from "./shopee.js";
 import { shortProductNames } from "./names.js";
+import { DEFAULT_RATES, installCost } from "./install.js";
 
 const TZ = "Asia/Jakarta";
 const n = v => (v == null ? 0 : Number(v));
@@ -157,6 +158,21 @@ export async function deleteExpense(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Tarif jasa pasang AC
+// ---------------------------------------------------------------------------
+export async function getInstallRates(client = null) {
+  const { rows } = await (client || { query }).query("SELECT value FROM finance_settings WHERE key = 'install_rates'");
+  return { ...DEFAULT_RATES, ...(rows[0]?.value || {}) };
+}
+
+export async function saveInstallRates(rates) {
+  await query(
+    `INSERT INTO finance_settings (key, value, updated_at) VALUES ('install_rates', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify(rates)]);
+  return rates;
+}
+
+// ---------------------------------------------------------------------------
 // Penjualan toko + Shopee
 // ---------------------------------------------------------------------------
 export async function listSales(month, channel = "") {
@@ -167,28 +183,33 @@ export async function listSales(month, channel = "") {
     `SELECT s.*,
             COALESCE(SUM(si.quantity * si.unit_price), 0) AS gross,
             COALESCE(SUM(si.quantity * si.unit_cost), 0)  AS cost,
+            COALESCE(SUM(si.quantity * si.install_cost), 0) AS install,
             COUNT(si.id) FILTER (WHERE si.product_id IS NULL) AS unlinked,
             json_agg(json_build_object('name', si.product_name, 'qty', si.quantity, 'unitPrice', si.unit_price,
-                     'productId', si.product_id) ORDER BY si.id) AS items
+                     'productId', si.product_id, 'installType', si.install_type, 'installMeters', si.install_meters,
+                     'installCost', si.install_cost) ORDER BY si.id) AS items
        FROM sales s JOIN sale_items si ON si.sale_id = s.id
       WHERE to_char(s.sold_at AT TIME ZONE $2, 'YYYY-MM') = $1 ${filter}
       GROUP BY s.id
       ORDER BY s.sold_at DESC, s.id DESC`, params);
   return rows.map(r => {
-    const revenue = n(r.subtotal) - n(r.discount);
+    // Installation cost comes off the selling price: revenue is what the goods earned.
+    const revenue = n(r.subtotal) - n(r.discount) - n(r.install);
     return {
       id: r.id, channel: r.channel, ref: r.external_ref, soldAt: r.sold_at, customer: r.customer, note: r.note,
-      subtotal: n(r.subtotal), discount: n(r.discount), fee: n(r.marketplace_fee),
+      subtotal: n(r.subtotal), discount: n(r.discount), install: n(r.install), fee: n(r.marketplace_fee),
       revenue, cost: n(r.cost), profit: revenue - n(r.marketplace_fee) - n(r.cost),
       unlinked: Number(r.unlinked),
-      items: r.items.map(i => ({ ...i, unitPrice: n(i.unitPrice) })),
+      items: r.items.map(i => ({ ...i, unitPrice: n(i.unitPrice), installCost: n(i.installCost) })),
     };
   });
 }
 
 /**
- * Walk-in sale. items: [{ productId, quantity, unitPrice }]. Stock is checked
- * and taken under row locks, like website checkout.
+ * Walk-in sale. items: [{ productId, quantity, unitPrice, installType, installMeters }].
+ * unitPrice is the price the customer paid per unit, installation included;
+ * the installation cost (from the current rates) is stored per unit and taken
+ * off the revenue. Stock is checked and taken under row locks, like checkout.
  */
 export async function createStoreSale({ soldAt, customer = "", note = "", discount = 0, items }) {
   return withTransaction(async client => {
@@ -206,6 +227,13 @@ export async function createStoreSale({ soldAt, customer = "", note = "", discou
     }
     if (problems.length) throw badRequest("Stok tidak cukup", problems);
 
+    const rates = await getInstallRates(client);
+    for (const i of items) {
+      i.installCost = installCost(i.installType || "none", i.installMeters, rates);
+      if (i.installCost > i.unitPrice) {
+        throw badRequest(`Harga jual ${byId.get(i.productId).name} lebih kecil dari biaya pasang (Rp ${i.installCost.toLocaleString("id-ID")}).`);
+      }
+    }
     const subtotal = items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
     const { rows: ins } = await client.query(
       `INSERT INTO sales (channel, sold_at, customer, subtotal, discount, note)
@@ -215,8 +243,10 @@ export async function createStoreSale({ soldAt, customer = "", note = "", discou
     for (const i of items) {
       const p = byId.get(i.productId);
       await client.query(
-        `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, unit_cost)
-         VALUES ($1,$2,$3,$4,$5,$6)`, [saleId, p.id, p.name, i.quantity, i.unitPrice, p.avg_cost]);
+        `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, unit_cost,
+                                 install_type, install_meters, install_cost)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [saleId, p.id, p.name, i.quantity, i.unitPrice, p.avg_cost, i.installType || "none", i.installMeters ?? null, i.installCost]);
       await client.query("UPDATE products SET stock = stock - $1 WHERE id = $2", [i.quantity, p.id]);
     }
     return saleId;
@@ -241,11 +271,15 @@ export async function deleteSale(id) {
 // ---------------------------------------------------------------------------
 // Shopee import
 // ---------------------------------------------------------------------------
-/** Saved listing → product links, keyed like listingKey(). */
+/** Saved listing → { productId, installType, installMeters }, keyed like listingKey(). */
 export async function getShopeeLinks() {
-  const { rows } = await query("SELECT shopee_name, shopee_variation, product_id FROM shopee_product_links");
+  const { rows } = await query(
+    "SELECT shopee_name, shopee_variation, product_id, install_type, install_meters FROM shopee_product_links");
   const map = new Map();
-  for (const r of rows) map.set(listingKey(r.shopee_name, r.shopee_variation), r.product_id);
+  for (const r of rows) {
+    map.set(listingKey(r.shopee_name, r.shopee_variation),
+      { productId: r.product_id, installType: r.install_type, installMeters: r.install_meters });
+  }
   return map;
 }
 
@@ -257,7 +291,8 @@ export async function existingShopeeRefs(refs) {
 }
 
 /**
- * Import sanitized orders. links: Map(listingKey → productId|null).
+ * Import sanitized orders. links: Map(listingKey → { productId|null, installType, installMeters }).
+ * Shopee prices include any installation package; its cost is stored per unit.
  * Orders already imported are skipped. Stock never goes below zero (the sale
  * already happened on Shopee); shortfalls come back as warnings.
  */
@@ -268,12 +303,13 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
       "SELECT external_ref FROM sales WHERE channel = 'shopee' AND external_ref = ANY($1::text[])", [refs]);
     const dup = new Set(dupRows.map(r => r.external_ref));
 
-    const productIds = [...new Set([...links.values()].filter(v => v != null))].sort((a, b) => a - b);
+    const productIds = [...new Set([...links.values()].map(v => v.productId).filter(v => v != null))].sort((a, b) => a - b);
+    const rates = await getInstallRates(client);
     const { rows: prows } = await client.query(
       "SELECT id, name, stock, avg_cost FROM products WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE", [productIds]);
     const products = new Map(prows.map(p => [p.id, { ...p, stock: Number(p.stock) }]));
 
-    const result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, fee: 0, warnings: [] };
+    const result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, install: 0, fee: 0, warnings: [] };
     const shortfall = new Map();
 
     for (const o of orders) {
@@ -287,12 +323,16 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
         [o.ref, o.soldAt, o.buyer, o.subtotal, o.discount, fee]);
       const saleId = ins[0].id;
       for (const l of o.lines) {
-        const pid = links.has(l.key) ? links.get(l.key) : null;
-        const p = pid != null ? products.get(pid) : null;
+        const link = links.get(l.key) || { productId: null, installType: "none", installMeters: null };
+        const p = link.productId != null ? products.get(link.productId) : null;
         const label = l.variation ? `${l.name} - ${l.variation}` : l.name;
+        const iCost = Math.min(installCost(link.installType, link.installMeters, rates), l.unitPrice);
         await client.query(
-          `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, unit_cost)
-           VALUES ($1,$2,$3,$4,$5,$6)`, [saleId, p ? p.id : null, label, l.qty, l.unitPrice, p ? p.avg_cost : 0]);
+          `INSERT INTO sale_items (sale_id, product_id, product_name, quantity, unit_price, unit_cost,
+                                   install_type, install_meters, install_cost)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [saleId, p ? p.id : null, label, l.qty, l.unitPrice, p ? p.avg_cost : 0, link.installType, link.installMeters, iCost]);
+        result.install += iCost * l.qty;
         if (p) {
           if (p.stock < l.qty) shortfall.set(p.id, (shortfall.get(p.id) || 0) + (l.qty - Math.max(0, p.stock)));
           p.stock = Math.max(0, p.stock - l.qty);
@@ -302,7 +342,7 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
         result.lines += 1;
       }
       result.imported += 1;
-      result.revenue += revenue;
+      result.revenue += revenue;   // before installation; result.install is shown beside it
       result.fee += fee;
     }
 
@@ -317,14 +357,15 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
 }
 
 export async function saveShopeeLinks(entries) {
-  // entries: [{ name, variation, productId|null }]
+  // entries: [{ name, variation, productId|null, installType, installMeters }]
   for (const e of entries) {
     await query(
-      `INSERT INTO shopee_product_links (shopee_name, shopee_variation, product_id, updated_at)
-       VALUES ($1, $2, $3, now())
+      `INSERT INTO shopee_product_links (shopee_name, shopee_variation, product_id, install_type, install_meters, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
        ON CONFLICT (shopee_name, shopee_variation)
-       DO UPDATE SET product_id = EXCLUDED.product_id, updated_at = now()`,
-      [e.name, e.variation, e.productId]);
+       DO UPDATE SET product_id = EXCLUDED.product_id, install_type = EXCLUDED.install_type,
+                     install_meters = EXCLUDED.install_meters, updated_at = now()`,
+      [e.name, e.variation, e.productId, e.installType || "none", e.installMeters ?? null]);
   }
 }
 
@@ -364,19 +405,23 @@ export async function financeReport(month) {
     `SELECT s.channel,
             COALESCE(SUM(si.quantity * si.unit_cost), 0) AS cost,
             COALESCE(SUM(si.quantity), 0)::int AS units,
+            COALESCE(SUM(si.quantity * si.install_cost), 0) AS install,
             COUNT(*) FILTER (WHERE si.product_id IS NULL OR si.unit_cost = 0)::int AS no_cost
        FROM sales s JOIN sale_items si ON si.sale_id = s.id
       WHERE to_char(s.sold_at AT TIME ZONE $2, 'YYYY-MM') = $1
       GROUP BY s.channel`, p);
 
   const channels = {
-    website: { orders: web.orders, revenue: n(web.revenue), shipping: n(web.shipping), fee: 0,
+    // gross = selling price after discounts; install = AC installation cost taken
+    // off it; revenue = gross - install (what the goods themselves earned).
+    website: { orders: web.orders, gross: n(web.revenue), install: 0, revenue: n(web.revenue), shipping: n(web.shipping), fee: 0,
                cost: n(webCost.cost), units: webCost.units, noCostLines: webCost.no_cost },
-    toko:    { orders: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
-    shopee:  { orders: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
+    toko:    { orders: 0, gross: 0, install: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
+    shopee:  { orders: 0, gross: 0, install: 0, revenue: 0, shipping: 0, fee: 0, cost: 0, units: 0, noCostLines: 0 },
   };
-  for (const r of chanRows) Object.assign(channels[r.channel], { orders: r.orders, revenue: n(r.revenue), fee: n(r.fee) });
-  for (const r of chanCost) Object.assign(channels[r.channel], { cost: n(r.cost), units: r.units, noCostLines: r.no_cost });
+  for (const r of chanRows) Object.assign(channels[r.channel], { orders: r.orders, gross: n(r.revenue), fee: n(r.fee) });
+  for (const r of chanCost) Object.assign(channels[r.channel], { cost: n(r.cost), install: n(r.install), units: r.units, noCostLines: r.no_cost });
+  for (const k of ["toko", "shopee"]) channels[k].revenue = channels[k].gross - channels[k].install;
 
   const { rows: expRows } = await query(
     `SELECT category, SUM(amount) AS amount FROM expenses
@@ -402,7 +447,7 @@ export async function financeReport(month) {
          LEFT JOIN products pr ON pr.id = oi.product_id
         WHERE ${WEBSITE_SALE} AND to_char(o.created_at AT TIME ZONE $2, 'YYYY-MM') = $1
        UNION ALL
-       SELECT COALESCE(pr.name, si.product_name), si.quantity, si.quantity * si.unit_price, si.quantity * si.unit_cost
+       SELECT COALESCE(pr.name, si.product_name), si.quantity, si.quantity * (si.unit_price - si.install_cost), si.quantity * si.unit_cost
          FROM sales s JOIN sale_items si ON si.sale_id = s.id
          LEFT JOIN products pr ON pr.id = si.product_id
         WHERE to_char(s.sold_at AT TIME ZONE $2, 'YYYY-MM') = $1)
@@ -411,6 +456,8 @@ export async function financeReport(month) {
 
   const sum = k => Object.values(channels).reduce((s, c) => s + c[k], 0);
   const revenue = sum("revenue");
+  const gross = sum("gross");
+  const install = sum("install");
   const shipping = sum("shipping");
   const cost = sum("cost");
   const fees = sum("fee");
@@ -421,7 +468,7 @@ export async function financeReport(month) {
     month,
     channels,
     totals: {
-      revenue, shipping, cost, fees, grossProfit,
+      gross, install, revenue, shipping, cost, fees, grossProfit,
       expenses: totalExpenses,
       netProfit: grossProfit - totalExpenses,
       orders: sum("orders"), units: sum("units"),

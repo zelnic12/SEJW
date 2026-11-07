@@ -1,7 +1,9 @@
 // Import Shopee: upload the order export from Shopee Seller Centre
 // (Pesanan Saya → Export). Each Shopee listing is matched to a website product
 // once; the match is remembered for the next import. Matched lines take stock
-// off the website product and carry its cost into the report.
+// off the website product and carry its cost into the report. Listings sold
+// with installation ("AC + PASANG +PIPA 5M") get their install package read
+// from the variation; its cost comes off the selling price.
 import { api } from "../components/api.js";
 import { money, esc } from "../components/format.js";
 import { dataTable } from "../components/dataTable.js";
@@ -9,6 +11,7 @@ import { toast } from "../components/toast.js";
 import {
   getMonth, monthPicker, onMonthChange, monthLabel, tgl,
   productDatalist, productOptionLabel, pickedProductId, confirmAction, signed,
+  installControl, readInstall, installCost, installText, meterPresets,
 } from "../components/finance-ui.js";
 
 const FEE_KEY = "sinar_shopee_fee_percent";
@@ -56,9 +59,10 @@ export async function renderShopeeImport(root) {
       ${dataTable({
         columns: [
           { label: "Tgl", render: s => `<span class="fin-date">${tgl(s.soldAt)}</span>` },
-          { label: "Pesanan", render: s => `${s.items.map(i => `${esc(i.name)} <span class="muted-dash">×${i.qty}</span>${i.productId ? "" : ` <span class="fin-tag">tanpa stok</span>`}`).join("<br>")}
+          { label: "Pesanan", render: s => `${s.items.map(i => `${esc(i.name)} <span class="muted-dash">×${i.qty}</span>${i.productId ? "" : ` <span class="fin-tag">tanpa stok</span>`}${
+                i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}`).join("<br>")}
               <span class="muted-sm">${esc(s.ref)} · ${esc(s.customer || "—")}</span>` },
-          { label: "Penjualan", num: true, render: s => money(s.revenue) },
+          { label: "Penjualan", num: true, render: s => money(s.revenue) + (s.install ? `<span class="muted-sm">pasang ${money(s.install)}</span>` : "") },
           { label: "Potongan", num: true, render: s => money(s.fee) },
           { label: "Laba", num: true, render: s => s.cost && !s.unlinked ? signed(s.profit) : `<span class="muted-dash" title="Ada barang tanpa modal">—</span>` },
           { label: "", render: s => `<button class="btn btn-ghost btn-xs" data-del="${s.id}">Hapus</button>` },
@@ -109,11 +113,19 @@ export async function renderShopeeImport(root) {
 }
 
 function renderReview(root) {
-  const { fileName, orders, skipped, listings, products, feePercent } = state;
+  const { fileName, orders, skipped, listings, products, feePercent, rates } = state;
   const byId = new Map(products.map(p => [p.id, p]));
   const fresh = orders.filter(o => !o.alreadyImported);
   const revenue = fresh.reduce((s, o) => s + o.subtotal - o.discount, 0);
   const matched = listings.filter(l => l.productId != null).length;
+  const listingIndex = new Map(listings.map((l, i) => [l.key, i]));
+  // Installation applies to AC: a matched AC product, an "AC" listing, or a variation that names a package.
+  const canInstall = l => (l.installType && l.installType !== "none")
+    || /^ac$/i.test(byId.get(l.productId)?.category || "") || /\bac\b/i.test(l.name);
+  const installTotal = () => fresh.reduce((s, o) => s + o.lines.reduce((t, ln) => {
+    const l = listings[listingIndex.get(ln.key)];
+    return t + ln.qty * Math.min(installCost(l.installType, l.installMeters, rates), ln.unitPrice);
+  }, 0), 0);
 
   root.innerHTML = `
     <div class="panel">
@@ -126,7 +138,8 @@ function renderReview(root) {
         <div><span>Pesanan baru</span><strong>${fresh.length}</strong></div>
         <div><span>Sudah pernah diimpor</span><strong>${orders.length - fresh.length}</strong></div>
         <div><span>Dilewati</span><strong>${skipped.length}</strong></div>
-        <div><span>Total penjualan</span><strong>${money(revenue)}</strong></div>
+        <div><span>Total harga jual</span><strong>${money(revenue)}</strong></div>
+        <div><span>Pasang &amp; material</span><strong id="shInstallTotal">${money(installTotal())}</strong></div>
         <div><span>Potongan ${esc(String(feePercent))}%</span><strong>${money(revenue * feePercent / 100)}</strong></div>
       </div>
       ${skipped.length ? `<details class="fin-details"><summary>${skipped.length} pesanan dilewati</summary>
@@ -138,11 +151,12 @@ function renderReview(root) {
         <h2>Cocokkan produk Shopee ke produk website</h2>
         <span class="fin-total">${matched} dari ${listings.length} sudah cocok</span>
       </div>
-      <p class="panel-note">Produk yang dicocokkan akan mengurangi stok website dan memakai modalnya untuk menghitung laba. Kosongkan untuk barang yang tidak ada di website (mis. kipas angin atau jasa pasang): penjualannya tetap tercatat, tapi stok tidak berubah. Pilihan Anda disimpan untuk import berikutnya.</p>
+      <p class="panel-note">Produk yang dicocokkan akan mengurangi stok website dan memakai modalnya untuk menghitung laba. Kosongkan untuk barang yang tidak ada di website (mis. kipas angin): penjualannya tetap tercatat, tapi stok tidak berubah. Untuk AC, kolom <strong>Jasa pasang</strong> dibaca dari variasi Shopee (mis. “AC + PASANG +PIPA 5M”), dan biayanya dipotong dari harga jual. Semua pilihan disimpan untuk import berikutnya.</p>
       ${productDatalist("shProducts", products)}
+      ${meterPresets}
       <div class="table-scroll">
         <table class="data-table fin-match">
-          <thead><tr><th>Produk di Shopee</th><th class="num">Terjual</th><th>Produk website</th></tr></thead>
+          <thead><tr><th>Produk di Shopee</th><th class="num">Terjual</th><th>Produk website</th><th>Jasa pasang</th></tr></thead>
           <tbody>${listings.map((l, i) => `
             <tr>
               <td>${esc(l.name)}${l.variation ? `<span class="muted-sm">Variasi: ${esc(l.variation)}</span>` : ""}</td>
@@ -153,6 +167,10 @@ function renderReview(root) {
                   placeholder="Tanpa produk (stok tidak berubah)" />
                 ${l.via ? `<span class="fin-tag ok" data-via="${i}">${esc(VIA[l.via] || l.via)}</span>` : `<span class="fin-tag" data-via="${i}" hidden></span>`}
               </td>
+              ${canInstall(l) ? `<td data-install="${i}">
+                ${installControl(`shInst${i}`, l.installType || "none", l.installMeters || 3)}
+                <span class="muted-sm" data-install-cost="${i}">${l.installType && l.installType !== "none" ? `− ${money(installCost(l.installType, l.installMeters, rates))} per unit` : ""}</span>
+              </td>` : `<td><span class="muted-dash">—</span></td>`}
             </tr>`).join("")}
           </tbody>
         </table>
@@ -187,9 +205,30 @@ function renderReview(root) {
     tag.hidden = true;
   }));
 
+  root.querySelectorAll("[data-install]").forEach(cell => {
+    const update = () => {
+      const i = Number(cell.dataset.install);
+      const inst = readInstall(cell);
+      cell.querySelector("input")?.classList.toggle("invalid", !inst.valid);
+      if (!inst.valid) return;
+      listings[i].installType = inst.type;
+      listings[i].installMeters = inst.meters;
+      cell.querySelector(`[data-install-cost="${i}"]`).textContent =
+        inst.type !== "none" ? `− ${money(installCost(inst.type, inst.meters, rates))} per unit` : "";
+      $("#shInstallTotal").textContent = money(installTotal());
+    };
+    cell.addEventListener("change", update);
+    cell.addEventListener("input", update);
+  });
+
   $("#shImport").addEventListener("click", async () => {
     const err = $("#shErr");
     err.hidden = true;
+    if (root.querySelector("[data-install] input.invalid")) {
+      err.textContent = "Isi panjang pipa 1–50 meter.";
+      err.hidden = false;
+      return;
+    }
     if (root.querySelector(".fin-match-input.invalid")) {
       err.textContent = "Ada produk yang tidak ada di daftar. Pilih dari daftar atau kosongkan.";
       err.hidden = false;
@@ -204,7 +243,10 @@ function renderReview(root) {
           ref, soldAt, buyer, discount,
           lines: lines.map(({ name, variation, qty, unitPrice }) => ({ name, variation, qty, unitPrice })),
         })),
-        links: listings.map(l => ({ name: l.name, variation: l.variation, productId: l.productId })),
+        links: listings.map(l => ({
+          name: l.name, variation: l.variation, productId: l.productId,
+          installType: l.installType || "none", installMeters: l.installMeters ?? null,
+        })),
         feePercent,
       });
       state = null;
@@ -225,6 +267,7 @@ function renderResult(root, r) {
         <div><span>Sudah ada (dilewati)</span><strong>${r.duplicates}</strong></div>
         <div><span>Penjualan</span><strong>${money(r.revenue)}</strong></div>
         <div><span>Potongan Shopee</span><strong>${money(r.fee)}</strong></div>
+        <div><span>Pasang &amp; material</span><strong>${money(r.install)}</strong></div>
         <div><span>Barang tanpa produk website</span><strong>${r.unlinkedLines}</strong></div>
       </div>
       ${r.warnings.length ? `<div class="fin-note warn"><strong>Perlu dicek:</strong><ul>${r.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
