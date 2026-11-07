@@ -83,7 +83,12 @@ export async function createReceipt({ receivedOn, productId, quantity, unitCost,
     const stock = Math.max(0, rows[0].stock);
     const avg = n(rows[0].avg_cost);
     // Moving average: what's on the shelf at the old cost + what arrived at the new cost.
-    const newAvg = (stock * avg + quantity * unitCost) / (stock + quantity);
+    // avg_cost 0 means "cost never recorded" (stock that existed before
+    // bookkeeping started), not "free": those units take the new purchase
+    // price instead of dragging the average toward zero.
+    const newAvg = avg > 0
+      ? (stock * avg + quantity * unitCost) / (stock + quantity)
+      : unitCost;
     await client.query("UPDATE products SET stock = stock + $1, avg_cost = $2 WHERE id = $3",
       [quantity, newAvg.toFixed(2), productId]);
     const { rows: ins } = await client.query(
