@@ -14,6 +14,8 @@
 //   POST   /shopee/commit            { orders, links, feePercent } → import report
 //   POST   /shopee/income            multipart income report (Penghasilan Saya) → real fees
 //   GET    /shopee/fee-stats         average real Shopee fee %, for the next estimate
+//   POST   /shopee/income/parse      multipart income report → orders to review (no order export needed)
+//   POST   /shopee/income/commit     { orders, links, payouts } → import with real fees
 //   GET    /report?month=            monthly profit & loss across website, toko and Shopee
 //   GET    /install-rates            AC installation rates   PUT /install-rates
 import { Router } from "express";
@@ -22,7 +24,7 @@ import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from 
 import { cleanInstall, cleanRates, detectInstall, installCost } from "../finance/install.js";
 import { proposeNewProduct } from "../finance/new-product.js";
 import { parseSpreadsheet, cellToString } from "../import/products.js";
-import { parseIncomeTable } from "../finance/shopee-income.js";
+import { parseIncomeTable, incomeOrders, inferQty } from "../finance/shopee-income.js";
 import { TEMPLATE_COLUMNS, normalizeReceiptRows, MAX_RECEIPT_ROWS } from "../finance/receipts-import.js";
 import ExcelJS from "exceljs";
 import { spreadsheetUpload, runUpload, uploadErrorMessage } from "../upload.js";
@@ -286,14 +288,11 @@ router.post("/shopee/parse", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post("/shopee/commit", wrap(async (req, res) => {
-  const b = req.body || {};
-  const orders = sanitizeOrders(b.orders);
-  const feePercent = Number(b.feePercent ?? 0);
-  if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 50) throw fin.badRequest("Persentase biaya Shopee harus 0–50%.");
-
+// Listing links from a commit: [{ name, variation, productId|null, installType, installMeters, newProduct? }].
+// Returns the Map the import uses and a save() for after the import (new products get ids then).
+async function commitLinks(rawInput) {
   // links: [{ name, variation, productId|null, installType, installMeters }] — one per Shopee listing.
-  const rawLinks = Array.isArray(b.links) ? b.links : [];
+  const rawLinks = Array.isArray(rawInput) ? rawInput : [];
   const links = new Map();
   const toSave = [];
   const products = new Set((await fin.listCostedProducts()).map(p => p.id));
@@ -320,10 +319,24 @@ router.post("/shopee/commit", wrap(async (req, res) => {
     toSave.push({ name: name.toLowerCase(), variation: variation.toLowerCase(), link });
   }
 
+  return {
+    map: links,
+    save: () => fin.saveShopeeLinks(toSave.map(({ name, variation, link }) => ({
+      name, variation, productId: link.productId, installType: link.installType, installMeters: link.installMeters,
+    }))),
+  };
+}
+
+router.post("/shopee/commit", wrap(async (req, res) => {
+  const b = req.body || {};
+  const orders = sanitizeOrders(b.orders);
+  const feePercent = Number(b.feePercent ?? 0);
+  if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 50) throw fin.badRequest("Persentase biaya Shopee harus 0–50%.");
+
+  const { map: links, save } = await commitLinks(b.links);
+
   const result = await fin.importShopeeOrders({ orders, links, feePercent });
-  await fin.saveShopeeLinks(toSave.map(({ name, variation, link }) => ({
-    name, variation, productId: link.productId, installType: link.installType, installMeters: link.installMeters,
-  })));
+  await save();
   res.json(result);
 }));
 
@@ -361,6 +374,98 @@ router.post("/shopee/income", async (req, res, next) => {
     res.json({ fileName: req.file.originalname, ...(await fin.importShopeePayouts(payouts)) });
   } catch (err) { next(err); }
 });
+
+// The income report on its own: orders, products and real payouts in one file.
+router.post("/shopee/income/parse", async (req, res, next) => {
+  try {
+    await runUpload(spreadsheetUpload.single("file"), req, res);
+  } catch (err) {
+    return res.status(400).json({ error: uploadErrorMessage(err) });
+  }
+  if (!req.file) return res.status(400).json({ error: "Pilih file laporan penghasilan Shopee (.xlsx)." });
+  let parsed;
+  try {
+    parsed = incomeOrders(await readIncomeTable(req.file.buffer));
+  } catch (err) {
+    return res.status(400).json({ error: err.expose ? err.message : `File tidak bisa dibaca: ${err.message}` });
+  }
+  if (!parsed.orders.length) return res.status(400).json({ error: "Tidak ada pesanan di laporan penghasilan ini." });
+  try {
+    const [products, links, existing, rates] = await Promise.all([
+      fin.listCostedProducts(), fin.getShopeeLinks(),
+      fin.existingShopeeRefs(parsed.orders.map(o => o.ref)), fin.getInstallRates(),
+    ]);
+    const byId = new Map(products.map(p => [p.id, p]));
+    const brands = [...new Set(products.map(p => p.brand).filter(Boolean))];
+    const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+
+    // One listing per product name (the report has no variations).
+    const listingMap = new Map();
+    for (const o of parsed.orders) for (const ln of o.lines) {
+      ln.key = listingKey(ln.name, "");
+      const e = listingMap.get(ln.key) || { key: ln.key, name: ln.name, variation: "", orders: 0, qty: 0, minAmount: Infinity };
+      e.orders += 1; e.minAmount = Math.min(e.minAmount, ln.amount);
+      listingMap.set(ln.key, e);
+    }
+    const listings = [...listingMap.values()].map(l => {
+      const saved = links.get(l.key);
+      let out;
+      if (saved && (saved.productId == null || byId.has(saved.productId))) out = { ...l, productId: saved.productId, via: "tersimpan" };
+      else {
+        const s = suggestProduct(l, products);
+        out = { ...l, productId: s ? s.productId : null, via: s ? s.via : null };
+      }
+      out.installType = "none"; out.installMeters = null;
+      out.proposal = proposeNewProduct(l, { brands, categories, price: l.minAmount });
+      return out;
+    });
+    const listingBy = new Map(listings.map(l => [l.key, l]));
+
+    // Quantity per line from a known unit price; a line well above the
+    // product's price is flagged so the admin checks it.
+    for (const o of parsed.orders) for (const ln of o.lines) {
+      const l = listingBy.get(ln.key);
+      const product = byId.get(l.productId);
+      ln.qty = inferQty(ln.amount, [product?.price, l.minAmount < ln.amount ? l.minAmount : null]);
+      ln.checkQty = ln.qty === 1 && product?.price > 0 && ln.amount > product.price * 1.6;
+      ln.installType = "none"; ln.installMeters = null;
+      l.qty += ln.qty;
+    }
+    res.json({
+      source: "income",
+      fileName: req.file.originalname,
+      orders: parsed.orders.map(o => ({ ...o, alreadyImported: existing.has(o.ref) })),
+      skipped: [],
+      listings: listings.map(({ minAmount, ...l }) => l),
+      rates, categories,
+      products: products.map(p => ({ id: p.id, name: p.name, shortName: p.shortName, category: p.category, stock: p.stock, avgCost: p.avgCost, price: p.price })),
+    });
+  } catch (err) { next(err); }
+});
+
+router.post("/shopee/income/commit", wrap(async (req, res) => {
+  const b = req.body || {};
+  // Payouts first: they also correct orders imported earlier from an order export.
+  const payouts = (Array.isArray(b.payouts) ? b.payouts : []).map(p => ({
+    ref: text(p?.ref, 64),
+    releasedOn: /^\d{4}-\d{2}-\d{2}$/.test(String(p?.releasedOn || "")) ? p.releasedOn : null,
+    productPrice: rupiah(p?.productPrice || 0, "Harga produk"),
+    payout: rupiah(p?.payout, "Dana diterima"),
+    fees: p?.fees && typeof p.fees === "object" ? Object.fromEntries(Object.entries(p.fees).slice(0, 30).map(([k, v]) => [text(k, 80), Number(v) || 0])) : {},
+  })).filter(p => p.ref);
+  if (!payouts.length) throw fin.badRequest("Tidak ada data penghasilan untuk diimpor.");
+  const payoutResult = await fin.importShopeePayouts(payouts);
+
+  const fresh = Array.isArray(b.orders) ? b.orders : [];
+  let result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, install: 0, fee: 0, warnings: [], createdProducts: [] };
+  if (fresh.length) {
+    const orders = sanitizeOrders(fresh);
+    const links = await commitLinks(b.links);
+    result = await fin.importShopeeOrders({ orders, links: links.map, feePercent: 0 });
+    await links.save();
+  }
+  res.json({ ...result, payouts: payoutResult });
+}));
 
 router.get("/shopee/fee-stats", wrap(async (req, res) => res.json(await fin.shopeeFeeStats())));
 

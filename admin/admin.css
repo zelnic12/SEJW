@@ -1045,3 +1045,12 @@ td[data-f="qty"] .fin-cell-input, .fin-ri td:nth-child(4) .fin-cell-input { widt
 .fin-shopee-list .data-table td.num, .fin-shopee-list .data-table th.num { white-space: nowrap; }
 .fin-shopee-list .data-table td:nth-child(2) { min-width: 260px; }
 .fin-income { margin-top: .4rem; }
+
+/* Import Shopee from the income report: quantity & installation per line */
+.fin-lines td { vertical-align: middle; }
+.fin-lines td:nth-child(2) { min-width: 240px; }
+.fin-lines td.num { white-space: nowrap; }
+.fin-lines .fin-qty { width: 64px; }
+.fin-lines td[data-install] { min-width: 250px; }
+.fin-lines .fin-install select { flex: 0 1 180px; }
+.fin-lines .fin-tag { margin-left: .35rem; }

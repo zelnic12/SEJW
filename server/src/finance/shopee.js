@@ -9,6 +9,8 @@
 
 // Header names as Shopee Indonesia writes them. A few have English twins in
 // some exports, hence the arrays.
+import { cleanInstall } from "./install.js";
+
 export const SHOPEE_COLUMNS = {
   orderNo:        ["No. Pesanan", "Order ID"],
   status:         ["Status Pesanan", "Order Status"],
@@ -262,9 +264,15 @@ export function sanitizeOrders(input) {
         throw Object.assign(new Error(`Baris barang pada pesanan ${ref} tidak valid.`), { expose: true });
       }
       const variation = str(l?.variation, 300);
-      return { key: listingKey(name, variation), name, variation, qty, unitPrice: Math.round(unitPrice) };
+      const line = { key: listingKey(name, variation), name, variation, qty, unitPrice: Math.round(unitPrice * 100) / 100 };
+      // Per-line installation (income-report imports, where there's no variation to read it from).
+      if (l.installType !== undefined && l.installType !== null) {
+        try { const c = cleanInstall(l.installType, l.installMeters); line.installType = c.type; line.installMeters = c.meters; }
+        catch (msg) { throw Object.assign(new Error(`Pesanan ${ref}: ${msg}`), { expose: true }); }
+      }
+      return line;
     });
-    const subtotal = lines.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.qty * l.unitPrice, 0) * 100) / 100;
     const discount = Math.min(Math.max(0, Math.round(Number(o.discount) || 0)), subtotal);
     return { ref, soldAt, buyer: str(o.buyer, 200), discount, subtotal, lines };
   });

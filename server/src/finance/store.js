@@ -368,7 +368,9 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
         [o.ref, o.soldAt, o.buyer, o.subtotal, o.discount, fee]);
       const saleId = ins[0].id;
       for (const l of o.lines) {
-        const link = links.get(l.key) || { productId: null, installType: "none", installMeters: null };
+        const saved = links.get(l.key) || { productId: null, installType: "none", installMeters: null };
+        // A line's own install choice (income-report imports) wins over the listing's.
+        const link = l.installType !== undefined ? { ...saved, installType: l.installType, installMeters: l.installMeters } : saved;
         const p = link.productId != null ? products.get(link.productId) : null;
         const label = l.variation ? `${l.name} - ${l.variation}` : l.name;
         const iCost = Math.min(installCost(link.installType, link.installMeters, rates), l.unitPrice);
