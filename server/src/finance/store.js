@@ -321,13 +321,38 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
       "SELECT external_ref FROM sales WHERE channel = 'shopee' AND external_ref = ANY($1::text[])", [refs]);
     const dup = new Set(dupRows.map(r => r.external_ref));
 
+    // Listings marked "+ Produk baru": add them to the catalogue first (stock 0,
+    // like any product before its barang masuk) and point their links at them.
+    // Several listings can name the same product (AC SAJA / AC + PASANG …): one product.
+    const created = new Map();   // lower-cased name → id
+    const fresh = new Map();     // id → name of products created by this import
+    for (const link of links.values()) {
+      if (!link.newProduct) continue;
+      const np = link.newProduct;
+      const key = np.name.toLowerCase();
+      if (!created.has(key)) {
+        const { rows: existing } = await client.query("SELECT id FROM products WHERE lower(name) = $1 LIMIT 1", [key]);
+        if (existing[0]) created.set(key, existing[0].id);
+        else {
+          const { rows: ins } = await client.query(
+            `INSERT INTO products (name, brand, category, price, stock) VALUES ($1, $2, $3, $4, 0) RETURNING id`,
+            [np.name, np.brand, np.category, np.price]);
+          created.set(key, ins[0].id);
+          fresh.set(ins[0].id, np.name);
+        }
+      }
+      link.productId = created.get(key);
+      delete link.newProduct;
+    }
+
     const productIds = [...new Set([...links.values()].map(v => v.productId).filter(v => v != null))].sort((a, b) => a - b);
     const rates = await getInstallRates(client);
     const { rows: prows } = await client.query(
       "SELECT id, name, stock, avg_cost FROM products WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE", [productIds]);
     const products = new Map(prows.map(p => [p.id, { ...p, stock: Number(p.stock) }]));
 
-    const result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, install: 0, fee: 0, warnings: [] };
+    const result = { imported: 0, duplicates: 0, lines: 0, unlinkedLines: 0, revenue: 0, install: 0, fee: 0, warnings: [],
+                     createdProducts: [...fresh].map(([id, name]) => ({ id, name })) };
     const shortfall = new Map();
 
     for (const o of orders) {
@@ -368,6 +393,7 @@ export async function importShopeeOrders({ orders, links, feePercent }) {
       await client.query("UPDATE products SET stock = $1 WHERE id = $2", [p.stock, p.id]);
     }
     for (const [id, missing] of shortfall) {
+      if (fresh.has(id)) continue;   // a product created just now has no stock yet; that's expected
       result.warnings.push(`Stok ${products.get(id).name} kurang ${missing} unit, jadi stoknya sekarang 0. Catat barang masuknya agar stok kembali benar.`);
     }
     return result;

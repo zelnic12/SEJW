@@ -11,7 +11,7 @@ import { toast } from "../components/toast.js";
 import {
   getMonth, monthPicker, onMonthChange, monthLabel, tgl,
   productDatalist, productOptionLabel, pickedProductId, confirmAction, signed,
-  installControl, readInstall, installCost, installText, meterPresets,
+  installControl, readInstall, installCost, installText, meterPresets, readRupiah,
 } from "../components/finance-ui.js";
 
 const FEE_KEY = "sinar_shopee_fee_percent";
@@ -113,12 +113,32 @@ export async function renderShopeeImport(root) {
 }
 
 function renderReview(root) {
-  const { fileName, orders, skipped, listings, products, feePercent, rates } = state;
+  const { fileName, orders, skipped, listings, products, feePercent, rates, categories = [] } = state;
   const byId = new Map(products.map(p => [p.id, p]));
   const fresh = orders.filter(o => !o.alreadyImported);
   const revenue = fresh.reduce((s, o) => s + o.subtotal - o.discount, 0);
-  const matched = listings.filter(l => l.productId != null).length;
+  const matched = listings.filter(l => l.productId != null || l.newProduct).length;
   const listingIndex = new Map(listings.map((l, i) => [l.key, i]));
+
+  // Product cell: pick an existing website product, or "+ Produk baru" to add one.
+  const productCell = (l, i) => l.newProduct ? `
+      <div class="fin-newprod">
+        <div class="fin-newprod-head"><span class="fin-tag ok">Produk baru</span>
+          <button type="button" class="btn btn-ghost btn-xs" data-cancel-new="${i}">Batal</button></div>
+        <input class="fin-match-input" data-np="name" value="${esc(l.newProduct.name)}" aria-label="Nama produk baru" />
+        <div class="fin-newprod-row">
+          <input class="fin-match-input" data-np="category" list="shCategories" value="${esc(l.newProduct.category)}" aria-label="Kategori" placeholder="Kategori" />
+          <input class="fin-match-input" data-np="brand" value="${esc(l.newProduct.brand)}" aria-label="Merek" placeholder="Merek" />
+          <input class="fin-match-input num" data-np="price" inputmode="numeric" value="${Number(l.newProduct.price || 0).toLocaleString("id-ID")}" aria-label="Harga jual" />
+        </div>
+      </div>` : `
+      <input class="fin-match-input" data-i="${i}" list="shProducts" aria-label="Produk website untuk ${esc(l.name)}"
+        value="${l.productId != null && byId.has(l.productId) ? esc(productOptionLabel(byId.get(l.productId))) : ""}"
+        placeholder="Tanpa produk (stok tidak berubah)" />
+      <div class="fin-match-foot">
+        ${l.via ? `<span class="fin-tag ok" data-via="${i}">${esc(VIA[l.via] || l.via)}</span>` : `<span class="fin-tag" data-via="${i}" hidden></span>`}
+        ${l.productId == null ? `<button type="button" class="btn btn-ghost btn-xs" data-new="${i}">+ Produk baru</button>` : ""}
+      </div>`;
   // Installation applies to AC: a matched AC product, an "AC" listing, or a variation that names a package.
   const canInstall = l => (l.installType && l.installType !== "none")
     || /^ac$/i.test(byId.get(l.productId)?.category || "") || /\bac\b/i.test(l.name);
@@ -149,11 +169,12 @@ function renderReview(root) {
     <div class="panel">
       <div class="panel-head">
         <h2>Cocokkan produk Shopee ke produk website</h2>
-        <span class="fin-total">${matched} dari ${listings.length} sudah cocok</span>
+        <span class="fin-total" id="shMatched">${matched} dari ${listings.length} sudah cocok</span>
       </div>
       <p class="panel-note">Produk yang dicocokkan akan mengurangi stok website dan memakai modalnya untuk menghitung laba. Kosongkan untuk barang yang tidak ada di website (mis. kipas angin): penjualannya tetap tercatat, tapi stok tidak berubah. Untuk AC, kolom <strong>Jasa pasang</strong> dibaca dari variasi Shopee (mis. “AC + PASANG +PIPA 5M”), dan biayanya dipotong dari harga jual. Semua pilihan disimpan untuk import berikutnya.</p>
       ${productDatalist("shProducts", products)}
       ${meterPresets}
+      <datalist id="shCategories">${categories.map(c => `<option value="${esc(c)}"></option>`).join("")}</datalist>
       <div class="table-scroll">
         <table class="data-table fin-match">
           <thead><tr><th>Produk di Shopee</th><th class="num">Terjual</th><th>Produk website</th><th>Jasa pasang</th></tr></thead>
@@ -161,12 +182,7 @@ function renderReview(root) {
             <tr>
               <td>${esc(l.name)}${l.variation ? `<span class="muted-sm">Variasi: ${esc(l.variation)}</span>` : ""}</td>
               <td class="num">${l.qty}</td>
-              <td>
-                <input class="fin-match-input" data-i="${i}" list="shProducts" aria-label="Produk website untuk ${esc(l.name)}"
-                  value="${l.productId != null && byId.has(l.productId) ? esc(productOptionLabel(byId.get(l.productId))) : ""}"
-                  placeholder="Tanpa produk (stok tidak berubah)" />
-                ${l.via ? `<span class="fin-tag ok" data-via="${i}">${esc(VIA[l.via] || l.via)}</span>` : `<span class="fin-tag" data-via="${i}" hidden></span>`}
-              </td>
+              <td data-product="${i}">${productCell(l, i)}</td>
               ${canInstall(l) ? `<td data-install="${i}">
                 ${installControl(`shInst${i}`, l.installType || "none", l.installMeters || 3)}
                 <span class="muted-sm" data-install-cost="${i}">${l.installType && l.installType !== "none" ? `− ${money(installCost(l.installType, l.installMeters, rates))} per unit` : ""}</span>
@@ -186,7 +202,31 @@ function renderReview(root) {
   const $ = s => root.querySelector(s);
   $("#shCancel").addEventListener("click", () => { state = null; renderShopeeImport(root); });
 
-  root.querySelectorAll(".fin-match-input").forEach(input => input.addEventListener("change", () => {
+  // "+ Produk baru": edit the proposed product inline; it's created on import.
+  root.querySelector("tbody").addEventListener("click", e => {
+    const btn = e.target.closest("[data-new], [data-cancel-new]");
+    if (!btn) return;
+    const i = Number(btn.dataset.new ?? btn.dataset.cancelNew);
+    const l = listings[i];
+    if (btn.dataset.new !== undefined) { l.newProduct = { ...l.proposal }; l.productId = null; l.via = null; }
+    else delete l.newProduct;
+    const cell = root.querySelector(`[data-product="${i}"]`);
+    cell.innerHTML = productCell(l, i);
+    wireMatchInput(cell.querySelector(".fin-match-input[data-i]"));
+    cell.querySelector("[data-np='name']")?.focus();
+    updateMatched();
+  });
+  root.querySelector("tbody").addEventListener("input", e => {
+    const f = e.target.dataset.np;
+    if (!f) return;
+    const l = listings[Number(e.target.closest("[data-product]").dataset.product)];
+    l.newProduct[f] = f === "price" ? readRupiah(e.target.value) : e.target.value;
+  });
+  const updateMatched = () => {
+    $("#shMatched").textContent = `${listings.filter(l => l.productId != null || l.newProduct).length} dari ${listings.length} sudah cocok`;
+  };
+
+  function wireMatchInput(input) { if (!input) return; input.addEventListener("change", () => {
     const i = Number(input.dataset.i);
     const v = input.value.trim();
     const id = pickedProductId(v);
@@ -202,8 +242,10 @@ function renderReview(root) {
       return;
     }
     listings[i].via = null;
-    tag.hidden = true;
-  }));
+    if (tag) tag.hidden = true;
+    updateMatched();
+  }); }
+  root.querySelectorAll(".fin-match-input[data-i]").forEach(wireMatchInput);
 
   root.querySelectorAll("[data-install]").forEach(cell => {
     const update = () => {
@@ -229,8 +271,14 @@ function renderReview(root) {
       err.hidden = false;
       return;
     }
+    const badNew = listings.find(l => l.newProduct && (String(l.newProduct.name || "").trim().length < 2 || !Number.isFinite(l.newProduct.price) || l.newProduct.price < 0));
+    if (badNew) {
+      err.textContent = `Lengkapi nama dan harga produk baru untuk "${badNew.name.slice(0, 50)}".`;
+      err.hidden = false;
+      return;
+    }
     if (root.querySelector(".fin-match-input.invalid")) {
-      err.textContent = "Ada produk yang tidak ada di daftar. Pilih dari daftar atau kosongkan.";
+      err.textContent = "Ada produk yang tidak ada di daftar. Pilih dari daftar, kosongkan, atau klik + Produk baru.";
       err.hidden = false;
       return;
     }
@@ -244,7 +292,8 @@ function renderReview(root) {
           lines: lines.map(({ name, variation, qty, unitPrice }) => ({ name, variation, qty, unitPrice })),
         })),
         links: listings.map(l => ({
-          name: l.name, variation: l.variation, productId: l.productId,
+          name: l.name, variation: l.variation, productId: l.newProduct ? null : l.productId,
+          newProduct: l.newProduct || null,
           installType: l.installType || "none", installMeters: l.installMeters ?? null,
         })),
         feePercent,
@@ -269,7 +318,11 @@ function renderResult(root, r) {
         <div><span>Potongan Shopee</span><strong>${money(r.fee)}</strong></div>
         <div><span>Pasang &amp; material</span><strong>${money(r.install)}</strong></div>
         <div><span>Barang tanpa produk website</span><strong>${r.unlinkedLines}</strong></div>
+        <div><span>Produk baru di website</span><strong>${r.createdProducts?.length || 0}</strong></div>
       </div>
+      ${r.createdProducts?.length ? `<div class="fin-note"><strong>Produk baru ditambahkan ke website (stok 0):</strong>
+        <ul>${r.createdProducts.map(p => `<li>${esc(p.name)}</li>`).join("")}</ul>
+        <p>Lengkapi foto dan deskripsinya di menu Products, lalu catat stoknya lewat Barang masuk.</p></div>` : ""}
       ${r.warnings.length ? `<div class="fin-note warn"><strong>Perlu dicek:</strong><ul>${r.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
       <div class="fin-actions">
         <button class="btn btn-primary" id="shAgain">Lihat pesanan Shopee</button>
