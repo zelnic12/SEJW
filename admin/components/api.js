@@ -228,6 +228,12 @@ export const api = {
     fd.append("file", file);
     return uploadForm("/admin/finance/shopee/income", fd);
   },
+  finParseShopeeIncome: file => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return uploadForm("/admin/finance/shopee/income/parse", fd);
+  },
+  finCommitShopeeIncome: payload => request("/admin/finance/shopee/income/commit", { method: "POST", body: payload }),
   finShopeeFeeStats: () => request("/admin/finance/shopee/fee-stats"),
   finCommitShopee: payload => request("/admin/finance/shopee/commit", { method: "POST", body: payload }),
   finInstallRates: () => request("/admin/finance/install-rates"),
