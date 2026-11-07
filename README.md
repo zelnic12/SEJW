@@ -1,4 +1,4 @@
-# VoltEdge — Full-Stack Electronics Store
+# Sinar Elektronik — Full-Stack Electronics Store
 
 A retail electronics store with a customer storefront, a checkout flow, a
 Node.js + Express REST API, a PostgreSQL database, and an **admin dashboard**.
