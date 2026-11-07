@@ -218,6 +218,8 @@ export const api = {
   finSales: (month, channel = "") =>
     request(`/admin/finance/sales?month=${encodeURIComponent(month)}${channel ? `&channel=${channel}` : ""}`),
   finCreateSale: data => request("/admin/finance/sales", { method: "POST", body: data }),
+  finUpdateSaleInstall: (saleId, itemId, installType, installMeters) =>
+    request(`/admin/finance/sales/${saleId}/items/${itemId}/install`, { method: "PUT", body: { installType, installMeters } }),
   finDeleteSale: id => request(`/admin/finance/sales/${id}`, { method: "DELETE" }),
   finParseShopee: file => {
     const fd = new FormData();

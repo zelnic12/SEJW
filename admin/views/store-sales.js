@@ -9,7 +9,7 @@ import { toast } from "../components/toast.js";
 import {
   getMonth, monthPicker, onMonthChange, monthLabel, defaultDate, today, tgl,
   productDatalist, pickedProductId, readRupiah, confirmAction, signed,
-  installControl, readInstall, installCost, installText, meterPresets, ratesPanelHTML, wireRatesPanel,
+  installControl, readInstall, installCost, installText, meterPresets, ratesPanelHTML, wireRatesPanel, editInstallDialog,
 } from "../components/finance-ui.js";
 
 const isAC = p => /^ac$/i.test(p?.category || "");
@@ -78,7 +78,8 @@ export async function renderStoreSales(root) {
           columns: [
             { label: "Tgl", render: s => `<span class="fin-date">${tgl(s.soldAt)}</span>` },
             { label: "Barang", render: s => `${s.items.map(i => `<span title="${esc(i.name)}">${esc(byId.get(i.productId)?.shortName || i.name)}</span> <span class="muted-dash">×${i.qty}</span>${
-                i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}`).join("<br>")}
+                i.installType && i.installType !== "none" ? ` <span class="fin-tag">${esc(installText(i.installType, i.installMeters))}</span>` : ""}${
+                isAC(byId.get(i.productId)) ? ` <button type="button" class="btn btn-ghost btn-xs" data-inst="${s.id}:${i.id}">Ubah pasang</button>` : ""}`).join("<br>")}
                 <span class="muted-sm">${esc([s.customer || "Umum", s.note].filter(Boolean).join(" · "))}</span>` },
             { label: "Penjualan", num: true, render: s => money(s.revenue)
                 + (s.install ? `<span class="muted-sm">dibayar ${money(s.subtotal - s.discount)}, pasang ${money(s.install)}</span>` : "")
@@ -186,6 +187,12 @@ export async function renderStoreSales(root) {
       btn.disabled = false;
     }
   });
+
+  root.querySelectorAll("[data-inst]").forEach(btn => btn.addEventListener("click", async () => {
+    const [saleId, itemId] = btn.dataset.inst.split(":").map(Number);
+    const item = sales.find(x => x.id === saleId)?.items.find(i => i.id === itemId);
+    if (item && await editInstallDialog({ api, toast, saleId, item, rates })) renderStoreSales(root);
+  }));
 
   root.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", async () => {
     const s = sales.find(x => x.id === Number(btn.dataset.del));

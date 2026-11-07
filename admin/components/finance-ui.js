@@ -198,3 +198,54 @@ export function wireRatesPanel(root, api, toast, onSaved) {
     } catch (ex) { err.textContent = ex.message; err.hidden = false; }
   });
 }
+
+/**
+ * "Ubah pasang" dialog for a recorded sale line. Resolves true after a save.
+ * item: { id, name, qty, unitPrice, installType, installMeters }
+ */
+export function editInstallDialog({ api, toast, saleId, item, rates }) {
+  return new Promise(resolve => {
+    let saved = false;
+    openModal({
+      title: "Ubah jasa pasang",
+      bodyHTML: `
+        <p class="form-hint">${esc(item.name)} · ${item.qty} unit · harga jual ${money(item.unitPrice)} / unit</p>
+        ${meterPresets}
+        <div id="eiCtl">${installControl("ei", item.installType || "none", item.installMeters || 3)}</div>
+        <p class="fin-line-note" id="eiNote"></p>
+        <p class="form-error" id="eiErr" hidden></p>`,
+      footHTML: `<button class="btn btn-ghost" data-close>Batal</button><button class="btn btn-primary" id="eiSave">Simpan</button>`,
+      onMount(overlay, close) {
+        const ctl = overlay.querySelector("#eiCtl");
+        const update = () => {
+          const inst = readInstall(ctl);
+          const cost = inst.valid ? installCost(inst.type, inst.meters, rates) : 0;
+          overlay.querySelector("#eiNote").innerHTML = inst.type !== "none" && inst.valid
+            ? `${money(item.unitPrice)} − ${esc(installText(inst.type, inst.meters).toLowerCase())} ${money(cost)} = <strong>${money(item.unitPrice - cost)}</strong> per unit`
+            : "";
+          return inst;
+        };
+        ctl.addEventListener("change", update);
+        ctl.addEventListener("input", update);
+        update();
+        overlay.querySelector("#eiSave").addEventListener("click", async () => {
+          const err = overlay.querySelector("#eiErr");
+          err.hidden = true;
+          const inst = update();
+          if (!inst.valid) { err.textContent = "Isi panjang pipa 1–50 meter."; err.hidden = false; return; }
+          try {
+            await api.finUpdateSaleInstall(saleId, item.id, inst.type, inst.meters);
+            saved = true;
+            toast("Jasa pasang diperbarui", "success");
+            close();
+            resolve(true);
+          } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+        });
+        const observer = new MutationObserver(() => {
+          if (!overlay.isConnected) { observer.disconnect(); if (!saved) resolve(false); }
+        });
+        observer.observe(overlay.parentNode || document.body, { childList: true });
+      },
+    });
+  });
+}
