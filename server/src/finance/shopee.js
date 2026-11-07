@@ -186,7 +186,7 @@ export function normalizeShopeeRows(headers, rows) {
 // ---------------------------------------------------------------------------
 
 // Spec tokens that look like model codes but appear on many products.
-const NOT_A_MODEL = /^(hdr\d*|dvbt2|r32|r410a?|\d+(hz|pk|kg|gr|ml|l|w|watt|inch|btu|liter|ltr|mah|gb|tb|p|k)|(4k|8k)\w*)$/i;
+export const NOT_A_MODEL = /^(hdr\d*|dvbt2|r32|r410a?|\d+(hz|pk|kg|gr|ml|l|w|watt|inch|btu|liter|ltr|mah|gb|tb|p|k)|(4k|8k)\w*)$/i;
 
 /** Model-code-looking tokens: letters + digits, at least 5 characters. */
 export function modelCodes(text) {

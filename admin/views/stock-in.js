@@ -58,7 +58,7 @@ export async function renderStockIn(root) {
         ${dataTable({
           columns: [
             { label: "Tgl", render: r => `<span class="fin-date">${tgl(r.receivedOn)}</span>` },
-            { label: "Produk", render: r => `${esc(r.productName)}<span class="muted-sm">${esc([r.supplier, r.note].filter(Boolean).join(" · ") || "—")}</span>` },
+            { label: "Produk", render: r => `<span title="${esc(r.productName)}">${esc(byId.get(r.productId)?.shortName || r.productName)}</span><span class="muted-sm">${esc([r.supplier, r.note].filter(Boolean).join(" · ") || "—")}</span>` },
             { label: "Qty", num: true, render: r => r.quantity.toLocaleString("id-ID") },
             { label: "Harga beli", num: true, render: r => money(r.unitCost) },
             { label: "Total", num: true, render: r => money(r.total) },
@@ -79,11 +79,12 @@ export async function renderStockIn(root) {
     const id = pickedProductId($("#rcProduct").value);
     const p = byId.get(id);
     if (!p) return;
-    hint.textContent = p.avgCost
+    const full = `${p.name}. `;
+    hint.textContent = full + (p.avgCost
       ? `Stok sekarang ${p.stock} · modal rata-rata ${money(p.avgCost)}`
       : p.stock > 0
         ? `Stok sekarang ${p.stock} belum punya modal. Harga beli yang Anda isi akan dipakai sebagai modal untuk semua stok produk ini.`
-        : `Stok sekarang 0 · modal belum ada`;
+        : `Stok sekarang 0 · modal belum ada`);
     try {
       const last = await api.finLastReceipt(id);
       if (last) {
@@ -121,7 +122,7 @@ export async function renderStockIn(root) {
     const r = receipts.find(x => x.id === Number(btn.dataset.del));
     const ok = await confirmAction({
       title: "Hapus barang masuk?",
-      message: `${r.quantity} unit ${r.productName} akan dikurangi dari stok, dan modal rata-ratanya dihitung ulang.`,
+      message: `${r.quantity} unit ${byId.get(r.productId)?.shortName || r.productName} akan dikurangi dari stok, dan modal rata-ratanya dihitung ulang.`,
     });
     if (!ok) return;
     try {

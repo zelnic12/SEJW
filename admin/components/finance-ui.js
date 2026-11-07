@@ -44,16 +44,21 @@ export const tgl = s => {
 };
 
 // ---- Product picker ----
-// A text input bound to a <datalist>. Each option reads "Name · stok N [#id]";
-// the id at the end is how we map the typed choice back to a product.
+// A text input bound to a <datalist>. Options show the short "Brand + model"
+// name (unique per product, made by the server) with category and stock as the
+// option's hint; the typed or chosen short name maps back to the product id.
+const pickerIds = new Map();   // lower-cased short name → product id
+
 export function productDatalist(id, products) {
+  for (const p of products) pickerIds.set(productOptionLabel(p).toLowerCase(), p.id);
   return `<datalist id="${id}">${products.map(p =>
-    `<option value="${esc(productOptionLabel(p))}"></option>`).join("")}</datalist>`;
+    `<option value="${esc(productOptionLabel(p))}" label="${esc([p.category, `stok ${p.stock}`].filter(Boolean).join(" · "))}"></option>`).join("")}</datalist>`;
 }
-export const productOptionLabel = p => `${p.name} · stok ${p.stock} [#${p.id}]`;
+export const productOptionLabel = p => p.shortName || p.name;
 export function pickedProductId(value) {
-  const m = String(value || "").match(/\[#(\d+)\]\s*$/);
-  return m ? Number(m[1]) : null;
+  const v = String(value || "").trim().toLowerCase();
+  if (!v) return null;
+  return pickerIds.get(v) ?? null;
 }
 
 // ---- Money input: accepts "1.500.000", "1500000", "Rp 1.500.000" ----

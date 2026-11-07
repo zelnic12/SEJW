@@ -169,7 +169,7 @@ router.post("/shopee/parse", async (req, res, next) => {
       orders: parsed.orders.map(o => ({ ...o, alreadyImported: existing.has(o.ref) })),
       skipped: parsed.skipped,
       listings,
-      products: products.map(p => ({ id: p.id, name: p.name, stock: p.stock, avgCost: p.avgCost })),
+      products: products.map(p => ({ id: p.id, name: p.name, shortName: p.shortName, category: p.category, stock: p.stock, avgCost: p.avgCost })),
     });
   } catch (err) { next(err); }
 });

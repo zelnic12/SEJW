@@ -64,7 +64,7 @@ export async function renderStoreSales(root) {
         ${dataTable({
           columns: [
             { label: "Tgl", render: s => `<span class="fin-date">${tgl(s.soldAt)}</span>` },
-            { label: "Barang", render: s => `${s.items.map(i => `${esc(i.name)} <span class="muted-dash">×${i.qty}</span>`).join("<br>")}
+            { label: "Barang", render: s => `${s.items.map(i => `<span title="${esc(i.name)}">${esc(byId.get(i.productId)?.shortName || i.name)}</span> <span class="muted-dash">×${i.qty}</span>`).join("<br>")}
                 <span class="muted-sm">${esc([s.customer || "Umum", s.note].filter(Boolean).join(" · "))}</span>` },
             { label: "Total", num: true, render: s => money(s.revenue) + (s.discount ? `<span class="muted-sm">diskon ${money(s.discount)}</span>` : "") },
             { label: "Laba", num: true, render: s => s.cost ? signed(s.profit) : `<span class="muted-dash" title="Modal belum tercatat">—</span>` },
