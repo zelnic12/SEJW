@@ -1017,3 +1017,17 @@ button.admin-back {
 .fin-rates summary h2::after { content: " ▾"; font-size: .8em; color: var(--text-secondary); }
 .fin-rates[open] summary { margin-bottom: 1rem; }
 .fin-pl-sub td { font-weight: 600; }
+
+/* Barang masuk: Excel import */
+.fin-ri td { vertical-align: middle; }
+.fin-ri td:nth-child(2) { min-width: 240px; }
+.fin-cell-input {
+  width: 110px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .4rem .5rem;
+  font: inherit; font-size: .85rem; color: var(--text-primary); background: var(--surface);
+}
+.fin-cell-input.num { text-align: right; font-variant-numeric: tabular-nums; }
+td[data-f="qty"] .fin-cell-input, .fin-ri td:nth-child(4) .fin-cell-input { width: 70px; }
+.fin-tag.bad { background: #FDECEC; color: var(--danger); white-space: normal; }
+.fin-ri-date { margin-top: 1rem; align-items: center; }
+.fin-ri-date .form-field:first-child { flex: 0 0 240px; }
+.fin-ri td.num { white-space: nowrap; }

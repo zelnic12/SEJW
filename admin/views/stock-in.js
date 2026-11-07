@@ -9,6 +9,7 @@ import {
   getMonth, monthPicker, onMonthChange, monthLabel, defaultDate, today, tgl,
   productDatalist, pickedProductId, readRupiah, confirmAction,
 } from "../components/finance-ui.js";
+import { renderStockInImport } from "./stock-in-import.js";
 
 export async function renderStockIn(root) {
   root.innerHTML = `<p class="admin-status">Memuat barang masuk…</p>`;
@@ -25,7 +26,7 @@ export async function renderStockIn(root) {
   const noCost = products.filter(p => p.stock > 0 && p.avgCost === 0).length;
 
   root.innerHTML = `
-    <div class="fin-toolbar">${monthPicker()}</div>
+    <div class="fin-toolbar">${monthPicker()}<button class="btn btn-ghost btn-sm" id="rcImport">⬆ Import Excel</button></div>
     <div class="fin-split">
       <div class="panel">
         <div class="panel-head"><h2>Catat barang masuk</h2></div>
@@ -71,6 +72,7 @@ export async function renderStockIn(root) {
     </div>`;
 
   onMonthChange(root, () => renderStockIn(root));
+  root.querySelector("#rcImport").addEventListener("click", () => renderStockInImport(root, () => renderStockIn(root)));
 
   const $ = s => root.querySelector(s);
   const hint = $("#rcHint");

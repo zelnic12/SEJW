@@ -82,26 +82,44 @@ export async function lastReceiptFor(productId) {
   return rows[0] ? { unitCost: n(rows[0].unit_cost), supplier: rows[0].supplier } : null;
 }
 
-export async function createReceipt({ receivedOn, productId, quantity, unitCost, supplier = "", note = "" }) {
+// One receipt inside an open transaction: lock the product, add stock, update avg cost.
+async function applyReceipt(client, { receivedOn, productId, quantity, unitCost, supplier = "", note = "" }) {
+  const { rows } = await client.query("SELECT stock, avg_cost FROM products WHERE id = $1 FOR UPDATE", [productId]);
+  if (!rows[0]) throw badRequest(`Produk #${productId} tidak ditemukan.`);
+  const stock = Math.max(0, rows[0].stock);
+  const avg = n(rows[0].avg_cost);
+  // Moving average: what's on the shelf at the old cost + what arrived at the new cost.
+  // avg_cost 0 means "cost never recorded" (stock that existed before
+  // bookkeeping started), not "free": those units take the new purchase
+  // price instead of dragging the average toward zero.
+  const newAvg = avg > 0
+    ? (stock * avg + quantity * unitCost) / (stock + quantity)
+    : unitCost;
+  await client.query("UPDATE products SET stock = stock + $1, avg_cost = $2 WHERE id = $3",
+    [quantity, newAvg.toFixed(2), productId]);
+  const { rows: ins } = await client.query(
+    `INSERT INTO stock_receipts (received_on, product_id, quantity, unit_cost, supplier, note)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [receivedOn, productId, quantity, unitCost, supplier, note]);
+  return ins[0].id;
+}
+
+export async function createReceipt(receipt) {
+  return withTransaction(client => applyReceipt(client, receipt));
+}
+
+/** Many receipts at once (Excel import): all are saved, or none are. */
+export async function createReceipts(receipts) {
   return withTransaction(async client => {
-    const { rows } = await client.query("SELECT stock, avg_cost FROM products WHERE id = $1 FOR UPDATE", [productId]);
-    if (!rows[0]) throw badRequest("Produk tidak ditemukan.");
-    const stock = Math.max(0, rows[0].stock);
-    const avg = n(rows[0].avg_cost);
-    // Moving average: what's on the shelf at the old cost + what arrived at the new cost.
-    // avg_cost 0 means "cost never recorded" (stock that existed before
-    // bookkeeping started), not "free": those units take the new purchase
-    // price instead of dragging the average toward zero.
-    const newAvg = avg > 0
-      ? (stock * avg + quantity * unitCost) / (stock + quantity)
-      : unitCost;
-    await client.query("UPDATE products SET stock = stock + $1, avg_cost = $2 WHERE id = $3",
-      [quantity, newAvg.toFixed(2), productId]);
-    const { rows: ins } = await client.query(
-      `INSERT INTO stock_receipts (received_on, product_id, quantity, unit_cost, supplier, note)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [receivedOn, productId, quantity, unitCost, supplier, note]);
-    return ins[0].id;
+    // Oldest first, so the moving average follows the order goods arrived in.
+    const ordered = receipts.map((r, i) => ({ r, i }))
+      .sort((a, b) => a.r.receivedOn.localeCompare(b.r.receivedOn) || a.i - b.i);
+    for (const { r } of ordered) await applyReceipt(client, r);
+    return {
+      count: receipts.length,
+      units: receipts.reduce((s, r) => s + r.quantity, 0),
+      total: receipts.reduce((s, r) => s + r.quantity * r.unitCost, 0),
+    };
   });
 }
 
