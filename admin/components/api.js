@@ -199,6 +199,8 @@ export const api = {
     return uploadForm("/admin/finance/shopee/parse", fd);
   },
   finCommitShopee: payload => request("/admin/finance/shopee/commit", { method: "POST", body: payload }),
+  finInstallRates: () => request("/admin/finance/install-rates"),
+  finSaveInstallRates: rates => request("/admin/finance/install-rates", { method: "PUT", body: rates }),
   finReport: month => request(`/admin/finance/report?month=${encodeURIComponent(month)}`),
 
   // Analytics

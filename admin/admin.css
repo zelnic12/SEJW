@@ -973,7 +973,7 @@ button.admin-back {
 .fin-details { margin-top: 1rem; font-size: .85rem; }
 .fin-details summary { cursor: pointer; color: var(--text-secondary); }
 .fin-match td:first-child { min-width: 260px; }
-.fin-match td:last-child { min-width: 320px; width: 42%; }
+.fin-match td:nth-child(3) { min-width: 250px; }
 .fin-match-input {
   width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .6rem;
   font: inherit; font-size: .85rem; color: var(--text-primary); background: var(--surface); margin-bottom: .3rem;
@@ -991,3 +991,29 @@ button.admin-back {
 .fin-indent td:first-child { padding-left: 1.2rem; color: var(--text-secondary); }
 .fin-pl-total td { font-weight: 600; border-top: 2px solid var(--text-primary); }
 .fin-pl-net td { font-weight: 700; font-size: 1rem; background: var(--primary-light); }
+
+/* AC installation (jasa pasang) */
+.fin-col { display: flex; flex-direction: column; gap: 1.6rem; min-width: 0; }
+.fin-line-install { grid-column: 1 / -1; display: flex; flex-direction: column; gap: .35rem; }
+.fin-line-install > label { font-size: .8rem; font-weight: 600; color: var(--text-secondary); }
+.fin-line + .fin-line .fin-line-install > label { display: block; }
+.fin-install { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.fin-install select, .fin-install input {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .45rem .55rem;
+  font: inherit; font-size: .85rem; color: var(--text-primary); background: var(--surface);
+}
+.fin-install select { flex: 1 1 160px; min-width: 0; }
+.fin-install-m { display: inline-flex; align-items: center; gap: .3rem; font-size: .85rem; color: var(--text-secondary); }
+.fin-install-m input { width: 72px; }
+.fin-install input.invalid { border-color: var(--danger); }
+.fin-line-note { margin: 0; font-size: .8rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.fin-line-note:empty { display: none; }
+.fin-match td[data-install] { min-width: 250px; }
+.fin-match .fin-install select { flex: 0 1 180px; }
+.fin-split .data-table td:nth-child(2) { min-width: 190px; }
+.fin-rates summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .4rem 1rem; }
+.fin-rates summary::-webkit-details-marker { display: none; }
+.fin-rates summary h2 { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
+.fin-rates summary h2::after { content: " ▾"; font-size: .8em; color: var(--text-secondary); }
+.fin-rates[open] summary { margin-bottom: 1rem; }
+.fin-pl-sub td { font-weight: 600; }

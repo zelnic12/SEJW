@@ -10,9 +10,11 @@
 //   POST   /shopee/parse             multipart Shopee export → orders + listing suggestions
 //   POST   /shopee/commit            { orders, links, feePercent } → import report
 //   GET    /report?month=            monthly profit & loss across website, toko and Shopee
+//   GET    /install-rates            AC installation rates   PUT /install-rates
 import { Router } from "express";
 import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
+import { cleanInstall, cleanRates, detectInstall } from "../finance/install.js";
 import { parseSpreadsheet } from "../import/products.js";
 import { spreadsheetUpload, runUpload, uploadErrorMessage } from "../upload.js";
 
@@ -54,6 +56,18 @@ function rupiah(v, label, { min = 0, max = 10_000_000_000 } = {}) {
 }
 const text = (v, max = 300) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 const idParam = req => int(req.params.id, "ID", { max: 2_147_483_647 });
+function install(type, meters, label) {
+  try { return cleanInstall(type, meters); }
+  catch (msg) { throw fin.badRequest(label ? `${label}: ${msg}` : msg); }
+}
+
+// ---- AC installation rates ----
+router.get("/install-rates", wrap(async (req, res) => res.json(await fin.getInstallRates())));
+router.put("/install-rates", wrap(async (req, res) => {
+  let rates;
+  try { rates = cleanRates(req.body); } catch (msg) { throw fin.badRequest(msg); }
+  res.json(await fin.saveInstallRates(rates));
+}));
 
 // ---- products ----
 router.get("/products", wrap(async (req, res) => res.json(await fin.listCostedProducts())));
@@ -117,11 +131,16 @@ router.post("/sales", wrap(async (req, res) => {
   if (!Array.isArray(b.items) || b.items.length === 0 || b.items.length > 100) {
     throw fin.badRequest("Tambahkan minimal satu barang.");
   }
-  const items = b.items.map((i, k) => ({
-    productId: int(i?.productId, `Produk baris ${k + 1}`, { max: 2_147_483_647 }),
-    quantity: int(i?.quantity, `Jumlah baris ${k + 1}`, { max: 100_000 }),
-    unitPrice: rupiah(i?.unitPrice, `Harga baris ${k + 1}`),
-  }));
+  const items = b.items.map((i, k) => {
+    const inst = install(i?.installType, i?.installMeters, `Baris ${k + 1}`);
+    return {
+      productId: int(i?.productId, `Produk baris ${k + 1}`, { max: 2_147_483_647 }),
+      quantity: int(i?.quantity, `Jumlah baris ${k + 1}`, { max: 100_000 }),
+      unitPrice: rupiah(i?.unitPrice, `Harga baris ${k + 1}`),
+      installType: inst.type,
+      installMeters: inst.meters,
+    };
+  });
   const id = await fin.createStoreSale({
     soldAt, items,
     customer: text(b.customer, 120),
@@ -154,21 +173,27 @@ router.post("/shopee/parse", async (req, res, next) => {
   }
 
   try {
-    const [products, links, existing] = await Promise.all([
+    const [products, links, existing, rates] = await Promise.all([
       fin.listCostedProducts(),
       fin.getShopeeLinks(),
       fin.existingShopeeRefs(parsed.orders.map(o => o.ref)),
+      fin.getInstallRates(),
     ]);
     const listings = parsed.listings.map(l => {
-      if (links.has(l.key)) return { ...l, productId: links.get(l.key), via: "tersimpan" };
+      const saved = links.get(l.key);
+      if (saved) return { ...l, ...saved, via: "tersimpan" };
       const s = suggestProduct(l, products);
-      return { ...l, productId: s ? s.productId : null, via: s ? s.via : null };
+      // "AC + PASANG +PIPA 5M" → installation package read from the variation
+      const inst = detectInstall(l.variation || l.name);
+      return { ...l, productId: s ? s.productId : null, via: s ? s.via : null,
+               installType: inst.type, installMeters: inst.meters };
     });
     res.json({
       fileName: req.file.originalname,
       orders: parsed.orders.map(o => ({ ...o, alreadyImported: existing.has(o.ref) })),
       skipped: parsed.skipped,
       listings,
+      rates,
       products: products.map(p => ({ id: p.id, name: p.name, shortName: p.shortName, category: p.category, stock: p.stock, avgCost: p.avgCost })),
     });
   } catch (err) { next(err); }
@@ -180,7 +205,7 @@ router.post("/shopee/commit", wrap(async (req, res) => {
   const feePercent = Number(b.feePercent ?? 0);
   if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 50) throw fin.badRequest("Persentase biaya Shopee harus 0–50%.");
 
-  // links: [{ name, variation, productId|null }] — one per Shopee listing.
+  // links: [{ name, variation, productId|null, installType, installMeters }] — one per Shopee listing.
   const rawLinks = Array.isArray(b.links) ? b.links : [];
   const links = new Map();
   const toSave = [];
@@ -190,8 +215,10 @@ router.post("/shopee/commit", wrap(async (req, res) => {
     if (!name) continue;
     const pid = l.productId == null || l.productId === "" ? null : Number(l.productId);
     if (pid != null && !products.has(pid)) throw fin.badRequest(`Produk #${l.productId} tidak ditemukan.`);
-    links.set(listingKey(name, variation), pid);
-    toSave.push({ name: name.toLowerCase(), variation: variation.toLowerCase(), productId: pid });
+    const inst = install(l.installType, l.installMeters, name.slice(0, 40));
+    const link = { productId: pid, installType: inst.type, installMeters: inst.meters };
+    links.set(listingKey(name, variation), link);
+    toSave.push({ name: name.toLowerCase(), variation: variation.toLowerCase(), ...link });
   }
 
   const result = await fin.importShopeeOrders({ orders, links, feePercent });

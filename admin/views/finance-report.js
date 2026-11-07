@@ -4,7 +4,7 @@ import { api } from "../components/api.js";
 import { money, esc } from "../components/format.js";
 import { statGrid } from "../components/statCard.js";
 import { toast } from "../components/toast.js";
-import { getMonth, monthPicker, onMonthChange, monthLabel, downloadCsv, signed, tgl } from "../components/finance-ui.js";
+import { getMonth, monthPicker, onMonthChange, monthLabel, downloadCsv, signed, tgl, installText } from "../components/finance-ui.js";
 
 const CH = [["website", "Website"], ["toko", "Toko"], ["shopee", "Shopee"]];
 const pct = (a, b) => (b ? `${(a / b * 100).toFixed(1).replace(".", ",")}%` : "—");
@@ -48,7 +48,9 @@ export async function renderFinanceReport(root) {
             <thead><tr><th></th>${CH.map(([, l]) => `<th class="num">${l}</th>`).join("")}<th class="num">Total</th></tr></thead>
             <tbody>
               ${row("Jumlah pesanan", x => x.orders, { count: true })}
-              ${row("Penjualan", x => x.revenue)}
+              ${t.install ? `${row("Harga jual", x => x.gross)}
+              ${row("Pasang &amp; material", x => x.install, { neg: true })}` : ""}
+              ${row("Penjualan", x => x.revenue, { cls: t.install ? "fin-pl-sub" : "" })}
               ${row("Ongkir diterima", x => x.shipping)}
               ${row("HPP (modal)", x => x.cost, { neg: true })}
               ${row("Potongan marketplace", x => x.fee, { neg: true })}
@@ -93,16 +95,18 @@ export async function renderFinanceReport(root) {
       const rows = [
         [`Laporan keuangan ${monthLabel(month)}`], [],
         ["Pos", ...CH.map(([, l]) => l), "Total"],
-        ...[["Jumlah pesanan", x => x.orders], ["Penjualan", x => x.revenue], ["Ongkir diterima", x => x.shipping],
+        ...[["Jumlah pesanan", x => x.orders], ["Harga jual", x => x.gross], ["Pasang & material", x => -x.install],
+            ["Penjualan", x => x.revenue], ["Ongkir diterima", x => x.shipping],
             ["HPP (modal)", x => -x.cost], ["Potongan marketplace", x => -x.fee], ["Laba kotor", gross]]
           .map(([l, f]) => [l, ...CH.map(([k]) => f(c[k])), CH.reduce((s, [k]) => s + f(c[k]), 0)]),
         [],
         ...r.expenses.map(e => [`Pengeluaran: ${e.category}`, "", "", "", -e.amount]),
         ["Laba bersih", "", "", "", t.netProfit],
         [], ["Penjualan toko & Shopee"],
-        ["Tanggal", "Saluran", "No. pesanan", "Pelanggan", "Barang", "Penjualan", "Potongan", "HPP", "Laba"],
+        ["Tanggal", "Saluran", "No. pesanan", "Pelanggan", "Barang", "Harga jual", "Pasang & material", "Penjualan", "Potongan", "HPP", "Laba"],
         ...sales.slice().reverse().map(s => [tgl(s.soldAt), s.channel === "toko" ? "Toko" : "Shopee", s.ref || "", s.customer,
-          s.items.map(i => `${i.name} x${i.qty}`).join(" | "), s.revenue, s.fee, s.cost, s.profit]),
+          s.items.map(i => `${i.name} x${i.qty}${i.installType && i.installType !== "none" ? ` (${installText(i.installType, i.installMeters)})` : ""}`).join(" | "),
+          s.subtotal - s.discount, s.install, s.revenue, s.fee, s.cost, s.profit]),
         [], ["Barang masuk"],
         ["Tanggal", "Produk", "Supplier", "Qty", "Harga beli", "Total"],
         ...receipts.slice().reverse().map(x => [x.receivedOn, x.productName, x.supplier, x.quantity, x.unitCost, x.total]),
