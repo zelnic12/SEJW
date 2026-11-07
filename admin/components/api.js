@@ -198,6 +198,7 @@ export const api = {
 
   // Bookkeeping (pembukuan)
   finProducts: () => request("/admin/finance/products"),
+  finNewProductProposal: name => request(`/admin/finance/new-product-proposal?name=${encodeURIComponent(name)}`),
   finReceipts: month => request(`/admin/finance/receipts?month=${encodeURIComponent(month)}`),
   finLastReceipt: productId => request(`/admin/finance/receipts/last/${productId}`),
   finSuppliers: () => request("/admin/finance/suppliers"),

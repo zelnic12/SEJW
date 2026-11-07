@@ -3,6 +3,7 @@
 // the product to create (name, brand, category, price) so the import can add
 // it to the catalogue and record the sale against it.
 import { detectInstall } from "./install.js";
+import { modelCodes } from "./shopee.js";
 
 const collapse = s => String(s ?? "").replace(/\s+/g, " ").trim();
 
@@ -33,8 +34,26 @@ export function newProductName(name, variation) {
   return (isPackage ? base : `${base} - ${v}`).slice(0, 300);
 }
 
-export function guessCategory(text, existing = []) {
+/**
+ * Category from keywords; failing that, from catalogue products whose model
+ * shares the same series prefix ("MSCE-07CRF8" → the category of "MSCE-10CRFN8").
+ * catalog: [{ name, category }] (optional).
+ */
+export function guessCategory(text, existing = [], catalog = []) {
   const found = CATEGORY_RULES.find(([re]) => re.test(text));
+  if (!found && catalog.length) {
+    const prefixes = modelCodes(text).map(c => c.match(/^[a-z]+/)?.[0]).filter(p => p && p.length >= 2);
+    if (prefixes.length) {
+      const votes = new Map();
+      for (const p of catalog) {
+        if (!p.category) continue;
+        const codes = modelCodes(p.name).map(c => c.match(/^[a-z]+/)?.[0]);
+        if (codes.some(c => prefixes.includes(c))) votes.set(p.category, (votes.get(p.category) || 0) + 1);
+      }
+      const best = [...votes].sort((a, b) => b[1] - a[1])[0];
+      if (best) return best[0];
+    }
+  }
   const name = found ? found[1] : "Lainnya";
   return existing.find(c => c.toLowerCase() === name.toLowerCase()) || name;
 }
@@ -58,12 +77,12 @@ export function guessBrand(text, brands = []) {
  * listing: { name, variation }, price: the price to list it at (Shopee price
  * without any installation package). Returns { name, brand, category, price }.
  */
-export function proposeNewProduct(listing, { brands = [], categories = [], price = 0 } = {}) {
+export function proposeNewProduct(listing, { brands = [], categories = [], catalog = [], price = 0 } = {}) {
   const name = newProductName(listing.name, listing.variation);
   return {
     name,
     brand: guessBrand(name, brands),
-    category: guessCategory(name, categories),
+    category: guessCategory(name, categories, catalog),
     price: Math.max(0, Math.round(price)),
   };
 }

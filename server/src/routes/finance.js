@@ -22,7 +22,7 @@ import { Router } from "express";
 import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
 import { cleanInstall, cleanRates, detectInstall, installCost } from "../finance/install.js";
-import { proposeNewProduct } from "../finance/new-product.js";
+import { proposeNewProduct, guessBrand, guessCategory } from "../finance/new-product.js";
 import { parseSpreadsheet, cellToString } from "../import/products.js";
 import { parseIncomeTable, incomeOrders, inferQty } from "../finance/shopee-income.js";
 import { TEMPLATE_COLUMNS, normalizeReceiptRows, MAX_RECEIPT_ROWS } from "../finance/receipts-import.js";
@@ -83,6 +83,34 @@ router.put("/install-rates", wrap(async (req, res) => {
 // ---- products ----
 router.get("/products", wrap(async (req, res) => res.json(await fin.listCostedProducts())));
 
+// Brand and category guessed for a product about to be added from Barang masuk.
+router.get("/new-product-proposal", wrap(async (req, res) => {
+  const name = text(req.query.name, 300);
+  const products = await fin.listCostedProducts();
+  const brands = [...new Set(products.map(p => p.brand).filter(Boolean))];
+  const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+  res.json({ name, brand: guessBrand(name, brands), category: guessCategory(name, categories, products), categories });
+}));
+
+/** { name, brand, category, price } for a product created from a form, or a 400. */
+function newProductInput(np, label = "Produk baru") {
+  const name = text(np?.name, 300);
+  if (name.length < 2) throw fin.badRequest(`${label}: nama minimal 2 huruf.`);
+  return {
+    name,
+    brand: text(np?.brand, 60),
+    category: text(np?.category, 60) || "Lainnya",
+    price: rupiah(np?.price ?? 0, `${label}: harga jual`, { max: 99_999_999 }),
+  };
+}
+
+/** productId, or newProduct when the row asks to add one. */
+function productRef(r, label) {
+  return r?.newProduct && (r.productId == null || r.productId === "")
+    ? { productId: null, newProduct: newProductInput(r.newProduct, label) }
+    : { productId: int(r?.productId, `${label}: produk`, { max: 2_147_483_647 }) };
+}
+
 // ---- barang masuk ----
 router.get("/receipts", wrap(async (req, res) => res.json(await fin.listReceipts(monthOf(req)))));
 router.get("/receipts/last/:id", wrap(async (req, res) => res.json(await fin.lastReceiptFor(idParam(req)))));
@@ -90,15 +118,15 @@ router.get("/suppliers", wrap(async (req, res) => res.json(await fin.listSupplie
 
 router.post("/receipts", wrap(async (req, res) => {
   const b = req.body || {};
-  const id = await fin.createReceipt({
+  const result = await fin.createReceipt({
     receivedOn: date(b.receivedOn, "Tanggal"),
-    productId: int(b.productId, "Produk", { max: 2_147_483_647 }),
+    ...productRef(b, "Produk baru"),
     quantity: int(b.quantity, "Jumlah"),
     unitCost: rupiah(b.unitCost, "Harga beli"),
     supplier: text(b.supplier, 120),
     note: text(b.note, 300),
   });
-  res.status(201).json({ id });
+  res.status(201).json(result);
 }));
 
 // ---- barang masuk from Excel ----
@@ -145,7 +173,15 @@ router.post("/receipts/parse", async (req, res, next) => {
     } catch (err) {
       return res.status(400).json({ error: err.expose ? err.message : `File tidak bisa dibaca: ${err.message}` });
     }
-    res.json({ fileName: req.file.originalname, ...parsed, today: todayJakarta() });
+    // A row whose product isn't on the website can add it: suggest brand and category.
+    const brands = [...new Set(products.map(p => p.brand).filter(Boolean))];
+    const categories = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+    for (const r of parsed.rows) {
+      if (r.productId == null && r.productText) {
+        r.proposal = { name: r.productText, brand: guessBrand(r.productText, brands), category: guessCategory(r.productText, categories, products), price: null };
+      }
+    }
+    res.json({ fileName: req.file.originalname, ...parsed, categories, today: todayJakarta() });
   } catch (err) { next(err); }
 });
 
@@ -157,7 +193,7 @@ router.post("/receipts/bulk", wrap(async (req, res) => {
     const label = `Baris ${r?.row ?? k + 1}`;
     return {
       receivedOn: date(r?.receivedOn, `${label}: tanggal`),
-      productId: int(r?.productId, `${label}: produk`, { max: 2_147_483_647 }),
+      ...productRef(r, label),
       quantity: int(r?.quantity, `${label}: jumlah`),
       unitCost: rupiah(r?.unitCost, `${label}: harga beli`),
       supplier: text(r?.supplier, 120),
@@ -273,7 +309,7 @@ router.post("/shopee/parse", async (req, res, next) => {
       }
       // What "+ Produk baru" would create; the price leaves out any install package.
       const price = (topPrice.get(l.key) || 0) - installCost(out.installType, out.installMeters, rates);
-      out.proposal = proposeNewProduct(l, { brands, categories, price });
+      out.proposal = proposeNewProduct(l, { brands, categories, catalog: products, price });
       return out;
     });
     res.json({
@@ -416,7 +452,7 @@ router.post("/shopee/income/parse", async (req, res, next) => {
         out = { ...l, productId: s ? s.productId : null, via: s ? s.via : null };
       }
       out.installType = "none"; out.installMeters = null;
-      out.proposal = proposeNewProduct(l, { brands, categories, price: l.minAmount });
+      out.proposal = proposeNewProduct(l, { brands, categories, catalog: products, price: l.minAmount });
       return out;
     });
     const listingBy = new Map(listings.map(l => [l.key, l]));

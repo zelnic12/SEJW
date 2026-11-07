@@ -25,4 +25,9 @@ assert.equal(guessCategory("Sesuatu yang lain", categories), "Lainnya");
 assert.equal(guessBrand("Selang Gas Quantum + Regulator", brands), "");
 assert.equal(guessBrand("MIDEA FS40-19K Kipas Angin", brands), "Midea");
 
+// No keyword: the category of catalogue products in the same model series
+const catalog = [{ name: "Midea MSCE-10CRFN8 AC Inverter 1 PK", category: "AC" }, { name: "TCL 50S5K GOOGLE TV", category: "TV" }];
+assert.equal(guessCategory("Midea MSCE-07CRF8", categories, catalog), "AC");
+assert.equal(guessCategory("Midea XYZ", categories, catalog), "Lainnya");
+
 console.log("new product: all assertions passed");
