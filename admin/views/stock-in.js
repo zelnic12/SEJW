@@ -8,25 +8,32 @@ import { toast } from "../components/toast.js";
 import {
   getMonth, monthPicker, onMonthChange, monthLabel, defaultDate, today, tgl,
   productDatalist, pickedProductId, readRupiah, confirmAction,
+  getDay, daySelect, onDayChange, countByDay, jakartaDay, daySummary, periodLabel,
 } from "../components/finance-ui.js";
 import { renderStockInImport } from "./stock-in-import.js";
 
 export async function renderStockIn(root) {
   root.innerHTML = `<p class="admin-status">Memuat barang masuk…</p>`;
   const month = getMonth();
-  let products, receipts, suppliers;
+  let products, monthReceipts, suppliers, monthSales;
   try {
-    [products, receipts, suppliers] = await Promise.all([api.finProducts(), api.finReceipts(month), api.finSuppliers()]);
+    [products, monthReceipts, suppliers, monthSales] = await Promise.all([
+      api.finProducts(), api.finReceipts(month), api.finSuppliers(), api.finSales(month, "toko"),
+    ]);
   } catch (err) {
     root.innerHTML = `<p class="admin-status error">${esc(err.message)}</p>`;
     return;
   }
   const byId = new Map(products.map(p => [p.id, p]));
+  const day = getDay();
+  const receipts = day === "all" ? monthReceipts : monthReceipts.filter(r => r.receivedOn === day);
+  const sales = day === "all" ? monthSales : monthSales.filter(x => jakartaDay(x.soldAt) === day);
   const total = receipts.reduce((s, r) => s + r.total, 0);
   const noCost = products.filter(p => p.stock > 0 && p.avgCost === 0).length;
 
   root.innerHTML = `
-    <div class="fin-toolbar">${monthPicker()}<button class="btn btn-ghost btn-sm" id="rcImport">⬆ Import Excel</button></div>
+    <div class="fin-toolbar"><div class="fin-periods">${monthPicker()}${daySelect(countByDay(monthReceipts, r => r.receivedOn))}</div><button class="btn btn-ghost btn-sm" id="rcImport">⬆ Import Excel</button></div>
+    ${daySummary(sales, receipts)}
     <div class="fin-split">
       <div class="panel">
         <div class="panel-head"><h2>Catat barang masuk</h2></div>
@@ -67,7 +74,7 @@ export async function renderStockIn(root) {
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2>Barang masuk ${esc(monthLabel(month))}</h2>
+          <h2>Barang masuk ${esc(periodLabel())}</h2>
           <span class="fin-total">Total pembelian <strong>${money(total)}</strong></span>
         </div>
         ${noCost ? `<p class="fin-note warn">${noCost} produk punya stok tapi modalnya belum tercatat. Catat barang masuknya di sini supaya laba di laporan akurat.</p>` : ""}
@@ -81,12 +88,13 @@ export async function renderStockIn(root) {
             { label: "", render: r => `<button class="btn btn-ghost btn-xs" data-del="${r.id}">Hapus</button>` },
           ],
           rows: receipts,
-          empty: `Belum ada barang masuk di ${monthLabel(month)}.`,
+          empty: `Belum ada barang masuk ${day === "all" ? `di ${monthLabel(month)}` : periodLabel()}.`,
         })}
       </div>
     </div>`;
 
   onMonthChange(root, () => renderStockIn(root));
+  onDayChange(root, () => renderStockIn(root));
   root.querySelector("#rcImport").addEventListener("click", () => renderStockInImport(root, () => renderStockIn(root)));
 
   const $ = s => root.querySelector(s);

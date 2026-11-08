@@ -18,6 +18,7 @@
 //   POST   /shopee/income/commit     { orders, links, payouts } → import with real fees
 //   GET    /report?month=            monthly profit & loss across website, toko and Shopee
 //   GET    /install-rates            AC installation rates   PUT /install-rates
+//   GET    /drafts/:kind             unfinished import        PUT, DELETE /drafts/:kind
 import { Router } from "express";
 import * as fin from "../finance/store.js";
 import { normalizeShopeeRows, suggestProduct, sanitizeOrders, listingKey } from "../finance/shopee.js";
@@ -509,10 +510,27 @@ router.post("/shopee/income/commit", wrap(async (req, res) => {
     result = await fin.importShopeeOrders({ orders, links: links.map, feePercent: 0 });
     await links.save();
   }
+  await fin.deleteDraft("shopee-income");
   res.json({ ...result, payouts: payoutResult });
 }));
 
 router.get("/shopee/fee-stats", wrap(async (req, res) => res.json(await fin.shopeeFeeStats())));
+
+// ---- unfinished imports (kept while the admin reviews) ----
+const draftKind = req => {
+  if (!fin.DRAFT_KINDS.has(req.params.kind)) throw fin.badRequest("Jenis draft tidak dikenal.");
+  return req.params.kind;
+};
+router.get("/drafts/:kind", wrap(async (req, res) => res.json(await fin.getDraft(draftKind(req)))));
+router.put("/drafts/:kind", wrap(async (req, res) => {
+  const kind = draftKind(req);
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) throw fin.badRequest("Draft tidak valid.");
+  res.json(await fin.saveDraft(kind, req.body));
+}));
+router.delete("/drafts/:kind", wrap(async (req, res) => {
+  await fin.deleteDraft(draftKind(req));
+  res.status(204).end();
+}));
 
 // ---- report ----
 router.get("/report", wrap(async (req, res) => res.json(await fin.financeReport(monthOf(req)))));

@@ -649,3 +649,20 @@ export async function financeReport(month) {
     })),
   };
 }
+
+// ---- Unfinished imports (drafts) ----
+export const DRAFT_KINDS = new Set(["shopee-income"]);
+export async function getDraft(kind) {
+  const { rows } = await query("SELECT data, updated_at FROM finance_drafts WHERE kind = $1", [kind]);
+  return rows[0] ? { data: rows[0].data, updatedAt: rows[0].updated_at } : null;
+}
+export async function saveDraft(kind, data) {
+  const { rows } = await query(
+    `INSERT INTO finance_drafts (kind, data, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (kind) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+     RETURNING updated_at`, [kind, JSON.stringify(data)]);
+  return { updatedAt: rows[0].updated_at };
+}
+export async function deleteDraft(kind) {
+  await query("DELETE FROM finance_drafts WHERE kind = $1", [kind]);
+}
