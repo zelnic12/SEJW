@@ -20,17 +20,60 @@ const isACText = s => /\bac\b|air\s+conditioner/i.test(s) && !/air\s*cooler|towe
 
 let state = null;   // parsed income report between upload and import
 
+// The review is saved to the server as a draft, so closing the browser or
+// refreshing doesn't lose it. Saves are debounced while the admin edits.
+const DRAFT = "shopee-income";
+let saveTimer = null;
+let saveStatus = () => {};
+function persist(now = false) {
+  clearTimeout(saveTimer);
+  const run = async () => {
+    if (!state) return;
+    saveStatus("Menyimpan draft…");
+    try {
+      const r = await api.finSaveDraft(DRAFT, state);
+      state.savedAt = r.updatedAt;
+      saveStatus(`Draft tersimpan ${jam(r.updatedAt)}`);
+    } catch (ex) { saveStatus(`Draft gagal disimpan: ${ex.message}`, true); }
+  };
+  if (now) return run();
+  saveTimer = setTimeout(run, 600);
+}
+async function discardDraft() {
+  clearTimeout(saveTimer);
+  state = null;
+  try { await api.finDeleteDraft(DRAFT); } catch { /* removed on the next import anyway */ }
+}
+const jam = s => new Date(s).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
+
 export async function renderShopeeImport(root) {
   if (state) return renderReview(root);
   root.innerHTML = `<p class="admin-status">Memuat…</p>`;
   const month = getMonth();
-  let sales, rates;
-  try { [sales, rates] = await Promise.all([api.finSales(month, "shopee"), api.finInstallRates()]); }
+  let sales, rates, draft;
+  try {
+    [sales, rates, draft] = await Promise.all([
+      api.finSales(month, "shopee"), api.finInstallRates(), api.finDraft(DRAFT).catch(() => null),
+    ]);
+  }
   catch (err) { root.innerHTML = `<p class="admin-status error">${esc(err.message)}</p>`; return; }
   const sum = k => sales.reduce((s, x) => s + (x[k] ?? 0), 0);
   const estimated = sales.filter(s => s.feeSource !== "actual").length;
 
+  const d = draft?.data;
+  const draftFresh = d ? d.orders.filter(o => !o.alreadyImported).length : 0;
   root.innerHTML = `
+    ${d ? `
+    <div class="panel fin-draft">
+      <div>
+        <h2>Import belum selesai</h2>
+        <p>${esc(d.fileName || "Laporan penghasilan")} · ${draftFresh} pesanan baru · disimpan ${esc(jam(draft.updatedAt))}. Pesanan ini <strong>belum masuk</strong> pembukuan sampai Anda menekan Import.</p>
+      </div>
+      <div class="fin-draft-actions">
+        <button class="btn btn-ghost btn-sm" id="drDiscard">Buang</button>
+        <button class="btn btn-primary btn-sm" id="drResume">Lanjutkan</button>
+      </div>
+    </div>` : ""}
     <div class="panel">
       <div class="panel-head"><h2>Import penghasilan Shopee</h2></div>
       <form id="inForm" class="fin-upload">
@@ -78,6 +121,20 @@ export async function renderShopeeImport(root) {
   onMonthChange(root, () => renderShopeeImport(root));
   const $ = s => root.querySelector(s);
 
+  if (d) {
+    $("#drResume").addEventListener("click", () => { state = { ...d, savedAt: draft.updatedAt }; renderReview(root); });
+    $("#drDiscard").addEventListener("click", async () => {
+      const ok = await confirmAction({
+        title: "Buang import yang belum selesai?",
+        message: `Hasil pemeriksaan ${d.fileName || "laporan"} dihapus. Pesanan yang sudah diimpor sebelumnya tidak terpengaruh.`,
+        confirmLabel: "Buang",
+      });
+      if (!ok) return;
+      await discardDraft();
+      renderShopeeImport(root);
+    });
+  }
+
   $("#inForm").addEventListener("submit", async e => {
     e.preventDefault();
     const err = $("#inErr");
@@ -89,6 +146,7 @@ export async function renderShopeeImport(root) {
     try {
       state = await api.finParseShopeeIncome(file);
       renderReview(root);
+      persist(true);
     } catch (ex) {
       err.textContent = ex.message; err.hidden = false;
       btn.disabled = false; btn.textContent = "Baca file";
@@ -156,6 +214,7 @@ function renderReview(root) {
     <div class="panel">
       <div class="panel-head">
         <h2>Periksa sebelum import</h2>
+        <span class="fin-save-status" id="shSaved">${state.savedAt ? `Draft tersimpan ${esc(jam(state.savedAt))}` : ""}</span>
         <button class="btn btn-ghost btn-sm" id="shCancel">Pilih file lain</button>
       </div>
       <div class="fin-facts">
@@ -218,7 +277,20 @@ function renderReview(root) {
     </div>`;
 
   const $ = s => root.querySelector(s);
-  $("#shCancel").addEventListener("click", () => { state = null; renderShopeeImport(root); });
+  saveStatus = (msg, bad = false) => {
+    const el = root.querySelector("#shSaved");
+    if (el) { el.textContent = msg; el.classList.toggle("bad", bad); }
+  };
+  $("#shCancel").addEventListener("click", async () => {
+    const ok = await confirmAction({
+      title: "Pilih file lain?",
+      message: "Hasil pemeriksaan file ini (produk, jumlah, jasa pasang) dibuang dan belum ada pesanan yang diimpor.",
+      confirmLabel: "Buang & pilih file lain",
+    });
+    if (!ok) return;
+    await discardDraft();
+    renderShopeeImport(root);
+  });
 
   const updateMatched = () => {
     $("#shMatched").textContent = `${listings.filter(l => l.productId != null || l.newProduct).length} dari ${listings.length} sudah cocok`;
@@ -238,6 +310,7 @@ function renderReview(root) {
       listings[i].via = null;
       if (tag) tag.hidden = true;
       updateMatched();
+      persist();
     });
   }
   root.querySelectorAll(".fin-match-input[data-i]").forEach(wireMatchInput);
@@ -254,12 +327,14 @@ function renderReview(root) {
     wireMatchInput(cell.querySelector(".fin-match-input[data-i]"));
     cell.querySelector("[data-np='name']")?.focus();
     updateMatched();
+    persist();
   });
   $("#shListings").addEventListener("input", e => {
     const f = e.target.dataset.np;
     if (!f) return;
     const l = listings[Number(e.target.closest("[data-product]").dataset.product)];
     l.newProduct[f] = f === "price" ? readRupiah(e.target.value) : e.target.value;
+    persist();
   });
 
   // Quantity and installation per line
@@ -278,6 +353,7 @@ function renderReview(root) {
       cell.querySelector('[data-f="icost"]').textContent =
         inst.valid && inst.type !== "none" ? `− ${money(installCost(inst.type, inst.meters, rates))} per unit` : "";
     }
+    persist();
   };
   $("#shLines")?.addEventListener("change", e => refreshLine(e.target.closest("tr")));
   $("#shLines")?.addEventListener("input", e => refreshLine(e.target.closest("tr")));
@@ -293,6 +369,7 @@ function renderReview(root) {
 
     const btn = $("#shImport");
     btn.disabled = true; btn.textContent = "Mengimpor…";
+    clearTimeout(saveTimer);
     try {
       const result = await api.finCommitShopeeIncome({
         orders: fresh.map(o => ({
@@ -308,10 +385,11 @@ function renderReview(root) {
         })),
         payouts: orders.map(o => ({ ref: o.ref, releasedOn: o.releasedOn, productPrice: o.productPrice, payout: o.payout, fees: o.fees })),
       });
-      state = null;
+      state = null;   // the server removed the draft with the import
       renderResult(root, result);
     } catch (ex) {
       fail(ex.message);
+      persist(true);
       btn.disabled = false; btn.textContent = fresh.length ? `Import ${fresh.length} pesanan` : "Perbarui dana diterima";
     }
   });

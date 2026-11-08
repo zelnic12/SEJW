@@ -240,6 +240,9 @@ export const api = {
   finShopeeFeeStats: () => request("/admin/finance/shopee/fee-stats"),
   finCommitShopee: payload => request("/admin/finance/shopee/commit", { method: "POST", body: payload }),
   finInstallRates: () => request("/admin/finance/install-rates"),
+  finDraft: kind => request(`/admin/finance/drafts/${kind}`),
+  finSaveDraft: (kind, data) => request(`/admin/finance/drafts/${kind}`, { method: "PUT", body: data }),
+  finDeleteDraft: kind => request(`/admin/finance/drafts/${kind}`, { method: "DELETE" }),
   finSaveInstallRates: rates => request("/admin/finance/install-rates", { method: "PUT", body: rates }),
   finReport: month => request(`/admin/finance/report?month=${encodeURIComponent(month)}`),
 

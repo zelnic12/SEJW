@@ -2,19 +2,26 @@
 // a searchable product picker, a confirm dialog and CSV download.
 import { esc, money } from "./format.js";
 import { openModal } from "./modal.js";
+import { statGrid } from "./statCard.js";
 
 // ---- Month (shared across the Pembukuan views, so switching pages keeps it) ----
 const jakartaToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
 let currentMonth = jakartaToday().slice(0, 7);
 export const getMonth = () => currentMonth;
-export const setMonth = m => { if (/^\d{4}-\d{2}$/.test(m)) currentMonth = m; };
+export const setMonth = m => {
+  if (!/^\d{4}-\d{2}$/.test(m)) return;
+  currentMonth = m;
+  // A new month opens on today when it's this month, else on the whole month.
+  currentDay = jakartaToday().startsWith(m) ? jakartaToday() : "all";
+};
 export const today = jakartaToday;
 
 const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 export const monthLabel = ym => { const [y, m] = ym.split("-"); return `${BULAN[Number(m) - 1]} ${y}`; };
 
-/** Default date for a form: today in the viewed month, else that month's last day. */
+/** Default date for a form: the picked day, else today in the viewed month, else that month's last day. */
 export function defaultDate() {
+  if (currentDay !== "all" && currentDay.startsWith(currentMonth)) return currentDay;
   const t = today();
   if (t.startsWith(currentMonth)) return t;
   const [y, m] = currentMonth.split("-").map(Number);
@@ -34,6 +41,70 @@ export function onMonthChange(root, rerender, id = "finMonth") {
     setMonth(e.target.value);
     rerender();
   });
+}
+
+// ---- Day within the month (Barang masuk, Penjualan toko) ----
+// "all" = the whole month. Defaults to today.
+let currentDay = jakartaToday();
+export const getDay = () => (currentDay !== "all" && currentDay.startsWith(currentMonth) ? currentDay : "all");
+
+/** Calendar day in Jakarta of a DATE ("2026-11-08") or a timestamp. */
+export const jakartaDay = s => (String(s).length === 10 ? String(s)
+  : new Date(s).toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" }));
+
+const HARI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+const dayOfWeek = d => HARI[new Date(`${d}T00:00:00Z`).getUTCDay()];
+/** "Minggu, 8 November 2026" */
+export const dayLabel = d => `${dayOfWeek(d)}, ${Number(d.slice(8))} ${BULAN[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`;
+/** Heading for the picked period: "hari ini", a date, or the month. */
+export const periodLabel = () => {
+  const d = getDay();
+  if (d === "all") return monthLabel(currentMonth);
+  return d === today() ? `hari ini (${dayLabel(d)})` : dayLabel(d);
+};
+
+/** Dropdown of the month's days. counts: Map day → number of entries, shown beside each day. */
+export function daySelect(counts = new Map(), id = "finDay") {
+  const [y, m] = currentMonth.split("-").map(Number);
+  let last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const t = today();
+  if (t.startsWith(currentMonth)) last = Number(t.slice(8));
+  const picked = getDay();
+  const opts = [];
+  for (let i = last; i >= 1; i--) {
+    const d = `${currentMonth}-${String(i).padStart(2, "0")}`;
+    const c = counts.get(d) || 0;
+    const name = d === t ? `Hari ini · ${dayOfWeek(d)} ${i}` : `${dayOfWeek(d)}, ${i} ${BULAN[m - 1].slice(0, 3)}`;
+    opts.push(`<option value="${d}" ${d === picked ? "selected" : ""}>${name}${c ? ` (${c})` : ""}</option>`);
+  }
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  return `<label class="fin-month"><span>Hari</span><select id="${id}">
+    <option value="all" ${picked === "all" ? "selected" : ""}>Semua hari${total ? ` (${total})` : ""}</option>${opts.join("")}</select></label>`;
+}
+export function onDayChange(root, rerender, id = "finDay") {
+  root.querySelector(`#${id}`)?.addEventListener("change", e => { currentDay = e.target.value || "all"; rerender(); });
+}
+export const countByDay = (rows, dateOf) => rows.reduce((m, r) => m.set(dateOf(r), (m.get(dateOf(r)) || 0) + 1), new Map());
+
+/**
+ * Summary of the picked day: shop sales and goods received.
+ * sales: store sales of that day; receipts: stock receipts of that day.
+ */
+export function daySummary(sales, receipts) {
+  const revenue = sales.reduce((s, x) => s + x.revenue, 0);
+  const units = sales.reduce((s, x) => s + x.items.reduce((a, i) => a + i.qty, 0), 0);
+  const costed = sales.filter(x => x.cost);
+  const profit = costed.reduce((s, x) => s + x.profit, 0);
+  const missing = sales.length - costed.length;
+  const inUnits = receipts.reduce((s, r) => s + r.quantity, 0);
+  const inTotal = receipts.reduce((s, r) => s + r.total, 0);
+  return `<div class="fin-stats fin-day-stats">${statGrid([
+    { icon: "🧾", label: "Transaksi toko", value: sales.length.toLocaleString("id-ID"), sub: `${units.toLocaleString("id-ID")} unit terjual` },
+    { icon: "💰", label: "Penjualan toko", value: money(revenue) },
+    { icon: profit >= 0 ? "📈" : "⚠️", label: "Laba", value: sales.length && !costed.length ? "—" : (profit < 0 ? "−" : "") + money(Math.abs(profit)),
+      sub: missing ? `${missing} transaksi belum punya modal` : (revenue ? `Margin ${(profit / revenue * 100).toFixed(1).replace(".", ",")}%` : "") },
+    { icon: "📦", label: "Barang masuk", value: `${inUnits.toLocaleString("id-ID")} unit`, sub: `${money(inTotal)} · ${receipts.length} catatan` },
+  ])}</div>`;
 }
 
 // ---- Dates ----

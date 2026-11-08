@@ -10,6 +10,7 @@ import {
   getMonth, monthPicker, onMonthChange, monthLabel, defaultDate, today, tgl,
   productDatalist, pickedProductId, readRupiah, confirmAction, signed,
   installControl, readInstall, installCost, installText, meterPresets, ratesPanelHTML, wireRatesPanel, editInstallDialog,
+  getDay, daySelect, onDayChange, countByDay, jakartaDay, daySummary, periodLabel,
 } from "../components/finance-ui.js";
 
 const isAC = p => /^ac$/i.test(p?.category || "");
@@ -33,18 +34,25 @@ const lineRow = i => `
 export async function renderStoreSales(root) {
   root.innerHTML = `<p class="admin-status">Memuat penjualan toko…</p>`;
   const month = getMonth();
-  let products, sales, rates;
+  let products, monthSales, rates, monthReceipts;
   try {
-    [products, sales, rates] = await Promise.all([api.finProducts(), api.finSales(month, "toko"), api.finInstallRates()]);
+    [products, monthSales, rates, monthReceipts] = await Promise.all([
+      api.finProducts(), api.finSales(month, "toko"), api.finInstallRates(), api.finReceipts(month),
+    ]);
   } catch (err) {
     root.innerHTML = `<p class="admin-status error">${esc(err.message)}</p>`;
     return;
   }
   const byId = new Map(products.map(p => [p.id, p]));
+  const day = getDay();
+  const saleDay = x => jakartaDay(x.soldAt);
+  const sales = day === "all" ? monthSales : monthSales.filter(x => saleDay(x) === day);
+  const receipts = day === "all" ? monthReceipts : monthReceipts.filter(r => r.receivedOn === day);
   const sum = k => sales.reduce((s, x) => s + x[k], 0);
 
   root.innerHTML = `
-    <div class="fin-toolbar">${monthPicker()}</div>
+    <div class="fin-toolbar"><div class="fin-periods">${monthPicker()}${daySelect(countByDay(monthSales, saleDay))}</div></div>
+    ${daySummary(sales, receipts)}
     <div class="fin-split">
       <div class="fin-col">
         <div class="panel">
@@ -71,7 +79,7 @@ export async function renderStoreSales(root) {
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2>Penjualan toko ${esc(monthLabel(month))}</h2>
+          <h2>Penjualan toko ${esc(periodLabel())}</h2>
           <span class="fin-total">${sales.length} transaksi · <strong>${money(sum("revenue"))}</strong></span>
         </div>
         ${dataTable({
@@ -88,12 +96,13 @@ export async function renderStoreSales(root) {
             { label: "", render: s => `<button class="btn btn-ghost btn-xs" data-del="${s.id}">Batalkan</button>` },
           ],
           rows: sales,
-          empty: `Belum ada penjualan toko di ${monthLabel(month)}.`,
+          empty: `Belum ada penjualan toko ${day === "all" ? `di ${monthLabel(month)}` : periodLabel()}.`,
         })}
       </div>
     </div>`;
 
   onMonthChange(root, () => renderStoreSales(root));
+  onDayChange(root, () => renderStoreSales(root));
   wireRatesPanel(root, api, toast, saved => { rates = saved; renderStoreSales(root); });
   const $ = s => root.querySelector(s);
   let next = 1;
